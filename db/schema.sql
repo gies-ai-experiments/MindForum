@@ -102,3 +102,77 @@ ALTER TABLE messages ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ;
 
 INSERT INTO schema_migrations (version) VALUES (5)
   ON CONFLICT (version) DO NOTHING;
+
+-- v6: allowlisted creators. Faculty operators self-serve their own rooms via a
+-- per-creator hashed token cookie; super-admin still authenticates via
+-- ADMIN_TOKEN. The synthetic 'cr_super_admin' row is a sentinel — its
+-- token_hash is unreachable (sha256 never produces all zeros for a real
+-- token), so super-admin can never authenticate via the creator-cookie path.
+-- The row exists so foreign keys and audit-log entries have a valid actor_id.
+CREATE TABLE IF NOT EXISTS allowlisted_creators (
+  id                TEXT PRIMARY KEY,
+  email             TEXT NOT NULL,
+  display_name      TEXT NOT NULL,
+  token_hash        TEXT NOT NULL,
+  token_last_four   TEXT NOT NULL,
+  token_rotated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  is_super_admin    BOOLEAN NOT NULL DEFAULT FALSE,
+  disabled_at       TIMESTAMPTZ,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_by        TEXT
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS allowlisted_creators_email_uniq
+  ON allowlisted_creators (lower(email));
+CREATE UNIQUE INDEX IF NOT EXISTS allowlisted_creators_token_hash_uniq
+  ON allowlisted_creators (token_hash);
+
+INSERT INTO allowlisted_creators (
+  id, email, display_name, token_hash, token_last_four,
+  is_super_admin, created_at, created_by
+) VALUES (
+  'cr_super_admin',
+  'super_admin@mindforum.local',
+  'Super Admin',
+  '0000000000000000000000000000000000000000000000000000000000000000',
+  '0000',
+  TRUE, NOW(), 'system'
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO schema_migrations (version) VALUES (6)
+  ON CONFLICT (version) DO NOTHING;
+
+-- v7: room ownership + archive. ON DELETE RESTRICT on owner_id is intentional
+-- — deleting a creator with rooms requires explicit transfer or hard-delete.
+-- Backfill uses the literal 'cr_super_admin' id (not a subquery) so the
+-- migration is rerun-safe and never fails on "0 or >1 super-admin rows".
+ALTER TABLE rooms ADD COLUMN IF NOT EXISTS owner_id    TEXT REFERENCES allowlisted_creators(id) ON DELETE RESTRICT;
+ALTER TABLE rooms ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
+
+UPDATE rooms SET owner_id = 'cr_super_admin' WHERE owner_id IS NULL;
+ALTER TABLE rooms ALTER COLUMN owner_id SET NOT NULL;
+
+CREATE INDEX IF NOT EXISTS rooms_owner_idx    ON rooms (owner_id);
+CREATE INDEX IF NOT EXISTS rooms_archived_idx ON rooms (archived_at) WHERE archived_at IS NULL;
+
+INSERT INTO schema_migrations (version) VALUES (7)
+  ON CONFLICT (version) DO NOTHING;
+
+-- v8: append-only audit log. No FK on room_id — entries must survive
+-- room.hard_delete (snapshot metadata captures slug/name before cascade).
+CREATE TABLE IF NOT EXISTS audit_log (
+  id          BIGSERIAL PRIMARY KEY,
+  at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  actor_id    TEXT NOT NULL,
+  actor_email TEXT NOT NULL,
+  action      TEXT NOT NULL,
+  room_id     TEXT,
+  metadata    JSONB
+);
+
+CREATE INDEX IF NOT EXISTS audit_log_actor_idx ON audit_log (actor_id, at DESC);
+CREATE INDEX IF NOT EXISTS audit_log_room_idx  ON audit_log (room_id, at DESC);
+
+INSERT INTO schema_migrations (version) VALUES (8)
+  ON CONFLICT (version) DO NOTHING;
