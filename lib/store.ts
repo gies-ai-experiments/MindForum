@@ -141,8 +141,8 @@ export async function createRoom(
     created_by_id: string;
     created_at: Date;
   }>(
-    `INSERT INTO rooms (id, name, system_prompt, created_by_id)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO rooms (id, name, system_prompt, created_by_id, owner_id)
+     VALUES ($1, $2, $3, $4, 'cr_super_admin')
      RETURNING id, name, system_prompt, created_by_id, created_at`,
     [id, name, systemPrompt, createdById]
   );
@@ -792,8 +792,8 @@ export async function adminUpsertRoom(input: {
       await client.query("DELETE FROM rooms WHERE id = $1", [input.id]);
     }
     await client.query(
-      `INSERT INTO rooms (id, name, system_prompt, created_by_id)
-       VALUES ($1, $2, $3, 'seed')
+      `INSERT INTO rooms (id, name, system_prompt, created_by_id, owner_id)
+       VALUES ($1, $2, $3, 'seed', 'cr_super_admin')
        ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, system_prompt = EXCLUDED.system_prompt`,
       [input.id, input.name, input.systemPrompt]
     );
