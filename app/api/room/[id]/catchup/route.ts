@@ -11,6 +11,10 @@ import {
   updateRollingSummary,
 } from "@/lib/openai";
 import { checkRate, clientIp, rateLimited } from "@/lib/ratelimit";
+import {
+  assertActiveOrOwnerOnArchive,
+  httpErrorResponse,
+} from "@/lib/creator-auth";
 
 export const runtime = "nodejs";
 
@@ -19,6 +23,13 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   if (!rate.allowed) return rateLimited(rate.retryAfterSeconds);
 
   const { id } = await ctx.params;
+  // Archived rooms: owner / super-admin still get the rolling summary;
+  // non-owners are gated. Per soft-delete matrix.
+  try {
+    await assertActiveOrOwnerOnArchive(id);
+  } catch (err) {
+    return httpErrorResponse(err);
+  }
   const room = await getRoomCatchupContext(id);
   if (!room) return NextResponse.json({ error: "room_not_found" }, { status: 404 });
 

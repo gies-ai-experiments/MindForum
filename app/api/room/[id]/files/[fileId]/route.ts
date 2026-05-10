@@ -1,6 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getParticipant, roomExists } from "@/lib/store";
+import {
+  deleteRoomFile,
+  getParticipant,
+  getRoomFileById,
+} from "@/lib/store";
 import { query } from "@/lib/db";
+import { broadcast } from "@/lib/sse";
+import {
+  assertActiveOrOwnerOnArchive,
+  httpErrorResponse,
+  requireRoomOwner,
+} from "@/lib/creator-auth";
+import { logAudit } from "@/lib/audit";
 
 export const runtime = "nodejs";
 
@@ -14,13 +25,24 @@ export async function GET(
   ctx: { params: Promise<{ id: string; fileId: string }> }
 ) {
   const { id, fileId } = await ctx.params;
-  if (!(await roomExists(id))) {
-    return NextResponse.json({ error: "room_not_found" }, { status: 404 });
+  // Archived rooms: owner / super-admin can still preview file content
+  // (useful for reviewing history before restore); other participants get 410.
+  let archived: boolean;
+  let isOwner: boolean;
+  try {
+    ({ archived, isOwner } = await assertActiveOrOwnerOnArchive(id));
+  } catch (err) {
+    return httpErrorResponse(err);
   }
 
-  const pid = req.cookies.get(`mindforum_pid_${id}`)?.value;
-  const participant = pid ? await getParticipant(id, pid) : null;
-  if (!participant) return NextResponse.json({ error: "not_joined" }, { status: 401 });
+  // Active rooms still require participant membership. Archived rooms reached
+  // here have already been gated to owner/super-admin, who don't need to be
+  // joined as participants to review history (per soft-delete matrix).
+  if (!(archived && isOwner)) {
+    const pid = req.cookies.get(`mindforum_pid_${id}`)?.value;
+    const participant = pid ? await getParticipant(id, pid) : null;
+    if (!participant) return NextResponse.json({ error: "not_joined" }, { status: 401 });
+  }
 
   const { rows } = await query<{
     id: string;
@@ -56,4 +78,42 @@ export async function GET(
     uploaderEmail: row.uploader_email,
     extractedText: row.extracted_text,
   });
+}
+
+/**
+ * DELETE: remove a file from the room. Owner-or-super-admin only — there's
+ * no participant-facing delete UX in v1. Captures a snapshot before delete
+ * for the audit `file.delete` metadata. Refuses on archived rooms (per the
+ * soft-delete matrix: edits to archived rooms require restore first).
+ */
+export async function DELETE(
+  _req: NextRequest,
+  ctx: { params: Promise<{ id: string; fileId: string }> }
+) {
+  try {
+    const { id, fileId } = await ctx.params;
+    const { actor, room } = await requireRoomOwner(id);
+    if (room.archivedAt !== null) {
+      return NextResponse.json({ error: "archived" }, { status: 410 });
+    }
+    const snap = await getRoomFileById(id, fileId);
+    if (!snap) return NextResponse.json({ error: "file_not_found" }, { status: 404 });
+    const ok = await deleteRoomFile(id, fileId);
+    if (!ok) return NextResponse.json({ error: "file_not_found" }, { status: 404 });
+
+    await logAudit({
+      actor,
+      action: "file.delete",
+      roomId: id,
+      metadata: {
+        fileId: snap.id,
+        fileName: snap.name,
+        sizeBytes: snap.sizeBytes,
+      },
+    });
+    broadcast(id, "file_removed", { id: fileId });
+    return new NextResponse(null, { status: 204 });
+  } catch (err) {
+    return httpErrorResponse(err);
+  }
 }

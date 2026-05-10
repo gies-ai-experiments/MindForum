@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getParticipant, roomExists, setFileSelected } from "@/lib/store";
+import { getParticipant, setFileSelected } from "@/lib/store";
 import { query } from "@/lib/db";
 import { broadcast } from "@/lib/sse";
+import { assertActiveRoom, httpErrorResponse } from "@/lib/creator-auth";
+import { logAudit } from "@/lib/audit";
 
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
-  if (!(await roomExists(id))) {
-    return NextResponse.json({ error: "room_not_found" }, { status: 404 });
+  try {
+    await assertActiveRoom(id);
+  } catch (err) {
+    return httpErrorResponse(err);
   }
 
   const pid = req.cookies.get(`mindforum_pid_${id}`)?.value;
@@ -24,6 +28,13 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
   const updated = await setFileSelected(id, fileId, selected);
   if (!updated) return NextResponse.json({ error: "file_not_found" }, { status: 404 });
+
+  await logAudit({
+    actor: { id: participant.id, email: participant.email },
+    action: "file.toggle_selected",
+    roomId: id,
+    metadata: { fileId, selected },
+  });
 
   const { rows } = await query<{ id: string }>(
     `SELECT id FROM room_files WHERE room_id = $1 AND selected = TRUE ORDER BY uploaded_at ASC`,

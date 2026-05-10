@@ -4,7 +4,6 @@ import {
   getParticipant,
   getRecentMessages,
   getSelectedFiles,
-  roomExists,
   updateMessageContent,
   type Message,
 } from "@/lib/store";
@@ -12,6 +11,7 @@ import { query } from "@/lib/db";
 import { broadcast } from "@/lib/sse";
 import { chatReplyStream } from "@/lib/openai";
 import { checkRate, clientIp, rateLimited } from "@/lib/ratelimit";
+import { assertActiveRoom, httpErrorResponse } from "@/lib/creator-auth";
 import { nanoid } from "nanoid";
 
 export const runtime = "nodejs";
@@ -23,8 +23,10 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   if (!rate.allowed) return rateLimited(rate.retryAfterSeconds);
 
   const { id } = await ctx.params;
-  if (!(await roomExists(id))) {
-    return NextResponse.json({ error: "room_not_found" }, { status: 404 });
+  try {
+    await assertActiveRoom(id);
+  } catch (err) {
+    return httpErrorResponse(err);
   }
 
   const pid = req.cookies.get(`mindforum_pid_${id}`)?.value;

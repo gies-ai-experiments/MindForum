@@ -11,9 +11,17 @@
 // path is creator-only by construction.
 
 import { cookies } from "next/headers";
+import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { query } from "./db";
 import { isAdmin } from "./admin-auth";
+import {
+  createCreator,
+  getRoomMeta,
+  rotateCreatorTokenHash,
+  type AllowlistedCreator,
+  type RoomMeta,
+} from "./store";
 
 export const CREATOR_COOKIE = "mindforum_creator_session";
 export const CREATOR_COOKIE_MAX_AGE_S = 60 * 60 * 24 * 365; // 1y
@@ -99,15 +107,17 @@ export async function getCreator(): Promise<Creator | null> {
 }
 
 /**
- * Resolve the current actor — either a creator (via cookie) or the super-admin
- * (via ADMIN_TOKEN cookie). When admin is authenticated, returns the synthetic
- * 'cr_super_admin' row so callers always have a valid actor_id to log against.
+ * Resolve the current actor — either the super-admin (via ADMIN_TOKEN cookie)
+ * or a creator (via creator cookie). Admin is checked FIRST so an operator
+ * who has both cookies (e.g. testing a creator session in the same browser)
+ * keeps their super-admin authority on cross-owner rooms — otherwise the
+ * creator-cookie path would fail ownership and 404 the operator out of their
+ * own admin tools. Audit attribution lands on `cr_super_admin` in this case,
+ * which is the right reflection of the privilege actually exercised.
  *
  * Returns null if neither path authenticates.
  */
 export async function getActor(): Promise<Creator | null> {
-  const creator = await getCreator();
-  if (creator) return creator;
   if (await isAdmin()) {
     const { rows } = await query<CreatorRow>(
       `SELECT id, email, display_name, is_super_admin, disabled_at
@@ -115,9 +125,9 @@ export async function getActor(): Promise<Creator | null> {
         WHERE id = 'cr_super_admin'
         LIMIT 1`
     );
-    return rows[0] ? toCreator(rows[0]) : null;
+    if (rows[0]) return toCreator(rows[0]);
   }
-  return null;
+  return getCreator();
 }
 
 export class HttpError extends Error {
@@ -153,4 +163,130 @@ export function checkRoomOwner(
 /** Sign-in: validate token, return the creator (caller sets the cookie). */
 export async function authenticateToken(plaintext: string): Promise<Creator | null> {
   return findByToken(plaintext);
+}
+
+// -------- Route-layer helpers
+//
+// These wrap the store and the auth primitives so handlers stay thin.
+// Plaintext tokens never enter or leave the store layer; they're generated
+// here, hashed, and the hash + last-4 are persisted.
+
+/**
+ * Create a new allowlisted creator. Generates the plaintext token, hashes it,
+ * and surfaces the plaintext exactly once for the operator to copy. Email
+ * collisions return `email_taken` so the route can render a friendly message.
+ */
+export async function provisionCreator(input: {
+  email: string;
+  displayName: string;
+  createdBy: string | null;
+}): Promise<
+  | { ok: true; creator: AllowlistedCreator; plaintextToken: string }
+  | { ok: false; error: "email_taken" }
+> {
+  const plaintext = generateToken();
+  const tokenHash = hashToken(plaintext);
+  const tokenLastFour = lastFour(plaintext);
+  const r = await createCreator({
+    email: input.email,
+    displayName: input.displayName,
+    tokenHash,
+    tokenLastFour,
+    createdBy: input.createdBy,
+  });
+  if (!r.ok) return r;
+  return { ok: true, creator: r.creator, plaintextToken: plaintext };
+}
+
+/**
+ * Generate a fresh token for an existing creator. Old cookie stops working
+ * on the next request (lookup is by token_hash). Refused on the synthetic
+ * super-admin row — its sentinel hash must remain unreachable.
+ */
+export async function regenerateCreatorToken(id: string): Promise<
+  | { ok: true; plaintextToken: string }
+  | { ok: false; error: "not_found" | "is_super_admin" }
+> {
+  if (id === "cr_super_admin") return { ok: false, error: "is_super_admin" };
+  const plaintext = generateToken();
+  const tokenHash = hashToken(plaintext);
+  const tokenLastFour = lastFour(plaintext);
+  const ok = await rotateCreatorTokenHash(id, tokenHash, tokenLastFour);
+  if (!ok) return { ok: false, error: "not_found" };
+  return { ok: true, plaintextToken: plaintext };
+}
+
+/**
+ * Resolve actor and assert ownership of `roomId`. Super-admin (via
+ * ADMIN_TOKEN cookie) passes regardless of owner. Returns 404 (not 403) for
+ * cross-owner access so room existence isn't leaked. 401 if no actor.
+ */
+export async function requireRoomOwner(
+  roomId: string
+): Promise<{ actor: Creator; room: RoomMeta }> {
+  const actor = await getActor();
+  if (!actor) throw new HttpError(401, "unauthorized");
+  const room = await getRoomMeta(roomId);
+  if (!room) throw new HttpError(404, "not_found");
+  checkRoomOwner(actor, room);
+  return { actor, room };
+}
+
+/**
+ * Convert a thrown `HttpError` (or any error) into a JSON response. Anything
+ * non-HttpError is logged and surfaced as a generic 500 — never leak internal
+ * details to the client.
+ */
+export function httpErrorResponse(err: unknown): NextResponse {
+  if (err instanceof HttpError) {
+    return NextResponse.json({ error: err.code }, { status: err.status });
+  }
+  console.error("unexpected route error:", err);
+  return NextResponse.json({ error: "internal" }, { status: 500 });
+}
+
+/**
+ * CSRF defense for new JSON endpoints: SameSite=Lax cookies aren't sent on
+ * cross-site form POSTs that lack the `application/json` content type, so
+ * requiring it is sufficient for v1. Throws HttpError(415).
+ */
+export function requireJsonContent(req: Request): void {
+  const ct = req.headers.get("content-type") ?? "";
+  if (!ct.toLowerCase().includes("application/json")) {
+    throw new HttpError(415, "unsupported_media_type");
+  }
+}
+
+/**
+ * Used by participant write paths to enforce the soft-delete contract: an
+ * archived room rejects every write with 410 Gone, regardless of who's
+ * asking (owner included — per spec, "edits to archived rooms require
+ * restore first"). Returns the room meta on success so the caller can
+ * reuse it without an extra round-trip.
+ */
+export async function assertActiveRoom(roomId: string): Promise<RoomMeta> {
+  const room = await getRoomMeta(roomId);
+  if (!room) throw new HttpError(404, "not_found");
+  if (room.archivedAt !== null) throw new HttpError(410, "archived");
+  return room;
+}
+
+/**
+ * Used by read paths that should still serve owner / super-admin on archived
+ * rooms (catchup, brief, file preview, SSE init snapshot). Returns whether
+ * the requester is the owner so the caller can adjust behavior (e.g. SSE
+ * stops broadcasting live events for archived rooms regardless).
+ */
+export async function assertActiveOrOwnerOnArchive(
+  roomId: string
+): Promise<{ room: RoomMeta; isOwner: boolean; archived: boolean }> {
+  const room = await getRoomMeta(roomId);
+  if (!room) throw new HttpError(404, "not_found");
+  if (room.archivedAt === null) {
+    return { room, isOwner: false, archived: false };
+  }
+  const actor = await getActor();
+  const isOwner = !!actor && (actor.isSuperAdmin || room.ownerId === actor.id);
+  if (!isOwner) throw new HttpError(410, "archived");
+  return { room, isOwner: true, archived: true };
 }

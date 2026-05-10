@@ -4,13 +4,16 @@ import {
   getParticipant,
   getRecentMessages,
   getSelectedFiles,
-  roomExists,
   type Message,
 } from "@/lib/store";
 import { query } from "@/lib/db";
 import { broadcast } from "@/lib/sse";
 import { generateBrief } from "@/lib/openai";
 import { checkRate, clientIp, rateLimited } from "@/lib/ratelimit";
+import {
+  assertActiveOrOwnerOnArchive,
+  httpErrorResponse,
+} from "@/lib/creator-auth";
 import { nanoid } from "nanoid";
 
 export const runtime = "nodejs";
@@ -20,13 +23,28 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   if (!rate.allowed) return rateLimited(rate.retryAfterSeconds);
 
   const { id } = await ctx.params;
-  if (!(await roomExists(id))) {
-    return NextResponse.json({ error: "room_not_found" }, { status: 404 });
+  // Archived rooms still allow brief generation for owner / super-admin per
+  // the soft-delete matrix — the brief is the most common reason to look at
+  // an archived conversation, and persisting it as an end-of-life summary is
+  // a useful audit trail.
+  let archived: boolean;
+  let isOwner: boolean;
+  try {
+    ({ archived, isOwner } = await assertActiveOrOwnerOnArchive(id));
+  } catch (err) {
+    return httpErrorResponse(err);
   }
 
-  const pid = req.cookies.get(`mindforum_pid_${id}`)?.value;
-  const participant = pid ? await getParticipant(id, pid) : null;
-  if (!participant) return NextResponse.json({ error: "not_joined" }, { status: 401 });
+  // Active rooms still require participant membership. Archived owners reach
+  // this path from the dashboard / admin surface without necessarily being
+  // joined participants, so skip the cookie check in that scenario — the
+  // generated message uses author_id="ai" anyway, no participant identity
+  // is required for the write.
+  if (!(archived && isOwner)) {
+    const pid = req.cookies.get(`mindforum_pid_${id}`)?.value;
+    const participant = pid ? await getParticipant(id, pid) : null;
+    if (!participant) return NextResponse.json({ error: "not_joined" }, { status: 401 });
+  }
 
   void (async () => {
     try {

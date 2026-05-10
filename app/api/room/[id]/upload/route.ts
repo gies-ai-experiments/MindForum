@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { addFile, getParticipant, roomExists, type RoomFile } from "@/lib/store";
+import { addFile, getParticipant, type RoomFile } from "@/lib/store";
 import { broadcast } from "@/lib/sse";
 import { parseFile } from "@/lib/parse";
 import { checkRate, clientIp, rateLimited } from "@/lib/ratelimit";
+import { assertActiveRoom, httpErrorResponse } from "@/lib/creator-auth";
+import { logAudit } from "@/lib/audit";
 import { nanoid } from "nanoid";
 
 export const runtime = "nodejs";
@@ -15,8 +17,10 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   if (!rate.allowed) return rateLimited(rate.retryAfterSeconds);
 
   const { id } = await ctx.params;
-  if (!(await roomExists(id))) {
-    return NextResponse.json({ error: "room_not_found" }, { status: 404 });
+  try {
+    await assertActiveRoom(id);
+  } catch (err) {
+    return httpErrorResponse(err);
   }
 
   const pid = req.cookies.get(`mindforum_pid_${id}`)?.value;
@@ -59,6 +63,19 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   }
 
   const { extractedText: _drop, selected: _sel, ...publicFile } = rf;
+  // Participant-scoped audit row. Actor namespace is participant id, not
+  // creator id — listings can disambiguate via the action column.
+  await logAudit({
+    actor: { id: participant.id, email: participant.email },
+    action: "file.upload",
+    roomId: id,
+    metadata: {
+      fileId: rf.id,
+      fileName: rf.name,
+      sizeBytes: rf.sizeBytes,
+      mime: rf.mime,
+    },
+  });
   broadcast(id, "file_added", publicFile);
   // Fresh selection list = everything currently selected. Cheap to rebuild on the fly.
   broadcast(id, "file_selection_changed", {

@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  roomExists,
   upsertParticipant,
   getParticipant,
   countMessagesAfter,
 } from "@/lib/store";
 import { broadcast } from "@/lib/sse";
 import { checkRate, clientIp, rateLimited } from "@/lib/ratelimit";
+import { assertActiveRoom, httpErrorResponse } from "@/lib/creator-auth";
 
 export const runtime = "nodejs";
 
@@ -38,8 +38,10 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   if (!rate.allowed) return rateLimited(rate.retryAfterSeconds);
 
   const { id } = await ctx.params;
-  if (!(await roomExists(id))) {
-    return NextResponse.json({ error: "room_not_found" }, { status: 404 });
+  try {
+    await assertActiveRoom(id);
+  } catch (err) {
+    return httpErrorResponse(err);
   }
 
   const body = await req.json().catch(() => ({}));

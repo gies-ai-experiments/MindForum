@@ -6,7 +6,15 @@
 // is only ever an INSERT.
 
 import { query } from "./db";
-import type { Creator } from "./creator-auth";
+
+/**
+ * Anything we can attribute to. In practice this is a Creator (id like
+ * `cr_xxx`) for super-admin / creator actions, or a Participant (id is a
+ * room-scoped nanoid) for participant-scoped actions like file.upload and
+ * file.toggle_selected. Audit listings filter by id, so the namespace mix
+ * is fine — the action column disambiguates context.
+ */
+export type AuditActor = { id: string; email: string };
 
 export type AuditAction =
   | "allowlist.create"
@@ -32,7 +40,7 @@ export type AuditAction =
  * a record, not a gate.
  */
 export async function logAudit(args: {
-  actor: Creator;
+  actor: AuditActor;
   action: AuditAction;
   roomId?: string | null;
   metadata?: Record<string, unknown>;
