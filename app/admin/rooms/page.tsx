@@ -7,7 +7,20 @@ import CopyLinkButton from "./CopyLinkButton";
 
 export const dynamic = "force-dynamic";
 
-type SearchParams = { sort?: string; dir?: string; q?: string; err?: string };
+type SearchParams = {
+  sort?: string;
+  dir?: string;
+  q?: string;
+  err?: string;
+  archived?: string;
+};
+
+type ArchivedFilter = "true" | "false" | "all";
+
+function resolveArchivedFilter(raw: string | undefined): ArchivedFilter {
+  if (raw === "true" || raw === "all") return raw;
+  return "false";
+}
 
 function relTime(d: Date | null): { label: string; dot: "green" | "yellow" | "gray" } {
   if (!d) return { label: "—", dot: "gray" };
@@ -62,7 +75,8 @@ export default async function AdminRoomsPage({
   }
   const sort = resolveSort(sp.sort, sp.dir);
   const q = (sp.q ?? "").trim();
-  const rows = await adminListRoomsWithActivity({ ...sort, q });
+  const archived = resolveArchivedFilter(sp.archived);
+  const rows = await adminListRoomsWithActivity({ ...sort, q, archived });
 
   const h = await headers();
   const proto = h.get("x-forwarded-proto") ?? "http";
@@ -71,10 +85,16 @@ export default async function AdminRoomsPage({
 
   return (
     <main style={{ maxWidth: 1100, margin: "2rem auto", padding: "0 16px", fontFamily: "system-ui" }}>
-      <h1>Rooms ({rows.length})</h1>
+      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+        <h1>Rooms ({rows.length})</h1>
+        <div style={{ fontSize: 13 }}>
+          <a href="/admin/users">Manage creators →</a>
+        </div>
+      </header>
       <form method="GET" action="/admin/rooms" style={{ marginBottom: 12 }}>
         <input type="hidden" name="sort" value={sort.column} />
         <input type="hidden" name="dir" value={sort.direction.toLowerCase()} />
+        <input type="hidden" name="archived" value={archived} />
         <input
           type="search"
           name="q"
@@ -83,7 +103,36 @@ export default async function AdminRoomsPage({
           style={{ padding: 6, width: 260 }}
         />
         <button type="submit" style={{ marginLeft: 6 }}>Filter</button>
-        {q && <a href="/admin/rooms" style={{ marginLeft: 8 }}>clear</a>}
+        {q && (
+          <a
+            href={`/admin/rooms${archived !== "false" ? `?archived=${archived}` : ""}`}
+            style={{ marginLeft: 8 }}
+          >
+            clear
+          </a>
+        )}
+        <span style={{ marginLeft: 16, fontSize: 13 }}>
+          {(["false", "true", "all"] as const).map((v) => {
+            const params = new URLSearchParams();
+            params.set("sort", sort.column);
+            params.set("dir", sort.direction.toLowerCase());
+            if (q) params.set("q", q);
+            if (v !== "false") params.set("archived", v);
+            const label = v === "false" ? "Active" : v === "true" ? "Archived" : "All";
+            return (
+              <a
+                key={v}
+                href={`/admin/rooms?${params.toString()}`}
+                style={{
+                  marginRight: 8,
+                  fontWeight: archived === v ? 600 : 400,
+                }}
+              >
+                {label}
+              </a>
+            );
+          })}
+        </span>
       </form>
       {rows.length === 0 ? (
         <p>No rooms match. Seed one with <code>scripts/seed-msba-rooms.py</code>.</p>
@@ -92,6 +141,8 @@ export default async function AdminRoomsPage({
           <thead>
             <tr style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>
               <th style={{ padding: 8 }}>{sortLink(sort, "name", q, "Room")}</th>
+              <th style={{ padding: 8 }}>Owner</th>
+              <th style={{ padding: 8 }}>Status</th>
               <th style={{ padding: 8 }}>{sortLink(sort, "last_message_at", q, "Last activity")}</th>
               <th style={{ padding: 8, textAlign: "right" }}>{sortLink(sort, "msgs_24h", q, "24h")}</th>
               <th style={{ padding: 8, textAlign: "right" }}>{sortLink(sort, "msgs_7d", q, "7d / users")}</th>
@@ -110,6 +161,44 @@ export default async function AdminRoomsPage({
                   <td style={{ padding: 8 }}>
                     <a href={`/room/${r.id}`} target="_blank" rel="noreferrer">{r.name}</a>
                     <div style={{ fontSize: 11, color: "#888" }}>{r.id}</div>
+                  </td>
+                  <td style={{ padding: 8, fontSize: 13 }}>
+                    {r.ownerId === "cr_super_admin" ? (
+                      <span style={{ color: "#888" }}>—</span>
+                    ) : (
+                      <a href={`/admin/users#${r.ownerId}`}>
+                        {r.ownerDisplayName ?? r.ownerId}
+                      </a>
+                    )}
+                  </td>
+                  <td style={{ padding: 8 }}>
+                    {r.archivedAt !== null ? (
+                      <span
+                        style={{
+                          background: "#fee2e2",
+                          color: "#991b1b",
+                          padding: "1px 6px",
+                          borderRadius: 4,
+                          fontSize: 11,
+                          fontWeight: 600,
+                        }}
+                      >
+                        ARCHIVED
+                      </span>
+                    ) : (
+                      <span
+                        style={{
+                          background: "#dcfce7",
+                          color: "#166534",
+                          padding: "1px 6px",
+                          borderRadius: 4,
+                          fontSize: 11,
+                          fontWeight: 600,
+                        }}
+                      >
+                        ACTIVE
+                      </span>
+                    )}
                   </td>
                   <td style={{ padding: 8 }}>
                     <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 4, background: dotColor, marginRight: 6 }} />

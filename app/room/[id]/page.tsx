@@ -54,6 +54,7 @@ type Snapshot = {
   id: string;
   name: string;
   systemPrompt?: string;
+  archived?: boolean;
   participants: Participant[];
   messages: Msg[];
   files: PublicFile[];
@@ -194,6 +195,10 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
         setJoinError("Room not found.");
         return;
       }
+      if (res.status === 410) {
+        setJoinError("This room is archived. Ask the room owner to restore it.");
+        return;
+      }
       if (!res.ok) {
         setJoinError("Could not join.");
         return;
@@ -327,6 +332,18 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
     es.addEventListener("file_added", (ev) => {
       const f: PublicFile = JSON.parse((ev as MessageEvent).data);
       setState((s) => (s ? { ...s, files: upsertById(s.files, f) } : s));
+    });
+    es.addEventListener("room_archived", () => {
+      setState((s) => (s ? { ...s, archived: true } : s));
+    });
+    es.addEventListener("room_restored", () => {
+      setState((s) => (s ? { ...s, archived: false } : s));
+    });
+    es.addEventListener("participant_removed", (ev) => {
+      const { id: removedId } = JSON.parse((ev as MessageEvent).data) as { id: string };
+      setState((s) =>
+        s ? { ...s, participants: s.participants.filter((p) => p.id !== removedId) } : s
+      );
     });
     es.addEventListener("reaction_changed", (ev) => {
       const { messageId, reactions } = JSON.parse((ev as MessageEvent).data) as {
@@ -656,15 +673,16 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
           ...btnSecondary(),
           textAlign: "center",
           display: "block",
-          opacity: busy ? 0.6 : 1,
+          opacity: busy || state.archived ? 0.5 : 1,
+          cursor: state.archived ? "not-allowed" : undefined,
         }}
       >
-        {busy ? "Uploading…" : "+ Upload file"}
+        {state.archived ? "Upload disabled (archived)" : busy ? "Uploading…" : "+ Upload file"}
         <input
           type="file"
           hidden
           accept=".pdf,.docx,.txt,.md"
-          disabled={busy}
+          disabled={busy || state.archived}
           onChange={(e) => {
             const f = e.target.files?.[0];
             if (f) upload(f);
@@ -678,8 +696,13 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
             generateBrief();
             setFilesDrawerOpen(false);
           }}
-          disabled={briefPending}
-          style={{ ...heroBtn(), width: "100%" }}
+          disabled={briefPending || state.archived}
+          style={{
+            ...heroBtn(),
+            width: "100%",
+            opacity: state.archived ? 0.5 : 1,
+            cursor: state.archived ? "not-allowed" : undefined,
+          }}
         >
           {briefPending ? "Generating…" : "✨ Generate project brief"}
         </button>
@@ -919,6 +942,23 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
         </div>
       </header>
 
+      {state.archived && (
+        <div
+          role="status"
+          style={{
+            background: "#fef2f2",
+            color: "#991b1b",
+            borderBottom: "1px solid #fecaca",
+            padding: "10px 16px",
+            fontSize: 14,
+            fontWeight: 500,
+            textAlign: "center",
+          }}
+        >
+          This room is archived — read-only. Restore it from the room settings to reopen.
+        </div>
+      )}
+
       <div
         style={{
           display: "grid",
@@ -961,7 +1001,19 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
             )}
             <div ref={chatBottomRef} />
           </div>
-          {(() => {
+          {state.archived ? (
+            <div
+              style={{
+                paddingTop: 12,
+                borderTop: "1px solid var(--border)",
+                color: "var(--muted)",
+                fontSize: 13,
+                fontStyle: "italic",
+              }}
+            >
+              Composer disabled — this room is archived.
+            </div>
+          ) : (() => {
             const aiMention = /^\s*@ai\b/i.test(draft);
             const pills = detectMentionPills(draft, state.participants, participantId);
             return (
