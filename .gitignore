@@ -4,5 +4,5 @@ node_modules
 *.log
 /tmp-uploads
 tsconfig.tsbuildinfo
-rooms/
+/rooms/
 .DS_Store
