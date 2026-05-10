@@ -56,10 +56,20 @@ export type Room = {
   name: string;
   createdAt: number;
   createdById: string;
+  ownerId: string;
+  archivedAt: number | null;
   systemPrompt: string;
   participants: Participant[];
   messages: Message[];
   files: RoomFile[];
+};
+
+/** Lightweight projection used by ownership/archive guards. */
+export type RoomMeta = {
+  id: string;
+  name: string;
+  ownerId: string;
+  archivedAt: number | null;
 };
 
 // -------- Row → domain mappers
@@ -128,6 +138,10 @@ function toRoomFile(r: {
 
 // -------- Room lifecycle
 
+/**
+ * Legacy admin / homepage path: server-generated nanoid slug, owner defaults to
+ * the synthetic super-admin row. Creator-cookie path uses `createRoomBySlug`.
+ */
 export async function createRoom(
   name: string,
   createdById: string,
@@ -139,11 +153,13 @@ export async function createRoom(
     name: string;
     system_prompt: string;
     created_by_id: string;
+    owner_id: string;
+    archived_at: Date | null;
     created_at: Date;
   }>(
     `INSERT INTO rooms (id, name, system_prompt, created_by_id, owner_id)
      VALUES ($1, $2, $3, $4, 'cr_super_admin')
-     RETURNING id, name, system_prompt, created_by_id, created_at`,
+     RETURNING id, name, system_prompt, created_by_id, owner_id, archived_at, created_at`,
     [id, name, systemPrompt, createdById]
   );
   const r = rows[0];
@@ -152,11 +168,86 @@ export async function createRoom(
     name: r.name,
     systemPrompt: r.system_prompt,
     createdById: r.created_by_id,
+    ownerId: r.owner_id,
+    archivedAt: r.archived_at ? r.archived_at.getTime() : null,
     createdAt: r.created_at.getTime(),
     participants: [],
     messages: [],
     files: [],
   };
+}
+
+/**
+ * Creator path: caller-supplied slug, explicit owner. Returns a tagged result
+ * so the route can surface `slug_taken` with the colliding owner's display
+ * name (per the v1 spec) without an extra round-trip. Slug uniqueness is
+ * global, first-come-first-served.
+ *
+ * The slug regex (`[a-z0-9-]{3,40}`) is enforced at the route layer; this
+ * function trusts its inputs.
+ */
+export async function createRoomBySlug(input: {
+  id: string;
+  name: string;
+  systemPrompt: string;
+  createdById: string;
+  ownerId: string;
+}): Promise<
+  | { ok: true; room: Room }
+  | { ok: false; error: "slug_taken"; ownerDisplayName: string | null }
+> {
+  return tx(async (client) => {
+    // Atomic claim: ON CONFLICT DO NOTHING avoids the pre-check race where two
+    // concurrent callers both see "free" and one trips the PK violation.
+    const ins = await client.query<{
+      id: string;
+      name: string;
+      system_prompt: string;
+      created_by_id: string;
+      owner_id: string;
+      archived_at: Date | null;
+      created_at: Date;
+    }>(
+      `INSERT INTO rooms (id, name, system_prompt, created_by_id, owner_id)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (id) DO NOTHING
+       RETURNING id, name, system_prompt, created_by_id, owner_id, archived_at, created_at`,
+      [input.id, input.name, input.systemPrompt, input.createdById, input.ownerId]
+    );
+
+    if ((ins.rowCount ?? 0) === 0) {
+      // Slug was taken — look up the existing owner's display name for the UX hint.
+      const existing = await client.query<{ display_name: string | null }>(
+        `SELECT c.display_name
+           FROM rooms r
+           LEFT JOIN allowlisted_creators c ON c.id = r.owner_id
+          WHERE r.id = $1`,
+        [input.id]
+      );
+      return {
+        ok: false as const,
+        error: "slug_taken" as const,
+        ownerDisplayName: existing.rows[0]?.display_name ?? null,
+      };
+    }
+
+    const r = ins.rows[0];
+    return {
+      ok: true as const,
+      room: {
+        id: r.id,
+        name: r.name,
+        systemPrompt: r.system_prompt,
+        createdById: r.created_by_id,
+        ownerId: r.owner_id,
+        archivedAt: r.archived_at ? r.archived_at.getTime() : null,
+        createdAt: r.created_at.getTime(),
+        participants: [],
+        messages: [],
+        files: [],
+      },
+    };
+  });
 }
 
 /** Fetch a room with all its participants, messages, and files. */
@@ -168,9 +259,11 @@ export async function getRoom(id: string): Promise<Room | null> {
       name: string;
       system_prompt: string;
       created_by_id: string;
+      owner_id: string;
+      archived_at: Date | null;
       created_at: Date;
     }>(
-      `SELECT id, name, system_prompt, created_by_id, created_at
+      `SELECT id, name, system_prompt, created_by_id, owner_id, archived_at, created_at
        FROM rooms WHERE id = $1`,
       [id]
     );
@@ -228,6 +321,8 @@ export async function getRoom(id: string): Promise<Room | null> {
       name: r.name,
       systemPrompt: r.system_prompt,
       createdById: r.created_by_id,
+      ownerId: r.owner_id,
+      archivedAt: r.archived_at ? r.archived_at.getTime() : null,
       createdAt: r.created_at.getTime(),
       participants: participantsQ.rows.map(toParticipant),
       messages: messagesQ.rows.map(toMessage),
@@ -242,6 +337,31 @@ export async function getRoom(id: string): Promise<Room | null> {
 export async function roomExists(id: string): Promise<boolean> {
   const { rowCount } = await query("SELECT 1 FROM rooms WHERE id = $1", [id]);
   return (rowCount ?? 0) > 0;
+}
+
+/**
+ * Lightweight projection for ownership / archive guards. Avoids loading
+ * messages / participants / files when all the route needs is the owner_id
+ * and archive state.
+ */
+export async function getRoomMeta(id: string): Promise<RoomMeta | null> {
+  const { rows } = await query<{
+    id: string;
+    name: string;
+    owner_id: string;
+    archived_at: Date | null;
+  }>(
+    `SELECT id, name, owner_id, archived_at FROM rooms WHERE id = $1`,
+    [id]
+  );
+  const r = rows[0];
+  if (!r) return null;
+  return {
+    id: r.id,
+    name: r.name,
+    ownerId: r.owner_id,
+    archivedAt: r.archived_at ? r.archived_at.getTime() : null,
+  };
 }
 
 // -------- Participants
@@ -769,6 +889,7 @@ export function snapshot(
     id: room.id,
     name: room.name,
     systemPrompt: room.systemPrompt,
+    archived: room.archivedAt !== null,
     participants: room.participants,
     messages: reactionsByMsg
       ? room.messages.map((m) => ({ ...m, reactions: reactionsByMsg.get(m.id) ?? [] }))
@@ -833,6 +954,9 @@ export type RoomActivityRow = {
   id: string;
   name: string;
   createdAt: Date;
+  archivedAt: Date | null;
+  ownerId: string;
+  ownerDisplayName: string | null;
   msgs24h: number;
   msgs7d: number;
   participants7d: number;
@@ -841,19 +965,39 @@ export type RoomActivityRow = {
   fileCount: number;
 };
 
+export type ArchivedFilter = "true" | "false" | "all";
+
+/**
+ * Activity rollup for the admin/dashboard rooms tables.
+ *
+ * - `archived` defaults to `'false'` (hide archived rooms) per the v1 spec.
+ *   Pass `'all'` to include every room or `'true'` for only archived.
+ * - `ownerId` filters to one creator's rooms — reused by `/dashboard` so it
+ *   doesn't duplicate this query.
+ */
 export async function adminListRoomsWithActivity(opts: {
   column: SortKey;
   direction: Direction;
   q?: string;
+  archived?: ArchivedFilter;
+  ownerId?: string;
 }): Promise<RoomActivityRow[]> {
-  const { column, direction, q } = opts;
+  const { column, direction, q, archived = "false", ownerId } = opts;
   // column/direction come from the whitelist resolver in lib/admin-sort.ts —
-  // safe to interpolate. q is parameterized.
+  // safe to interpolate. q / ownerId are parameterized.
+  let archivedClause: string;
+  if (archived === "true") archivedClause = "AND r.archived_at IS NOT NULL";
+  else if (archived === "false") archivedClause = "AND r.archived_at IS NULL";
+  else archivedClause = ""; // 'all'
+
   const sql = `
     SELECT
       r.id,
       r.name,
       r.created_at,
+      r.archived_at,
+      r.owner_id,
+      c.display_name AS owner_display_name,
       COUNT(m.id) FILTER (WHERE m.created_at > NOW() - INTERVAL '24 hours') AS msgs_24h,
       COUNT(m.id) FILTER (WHERE m.created_at > NOW() - INTERVAL '7 days')   AS msgs_7d,
       COUNT(DISTINCT m.author_id) FILTER (WHERE m.created_at > NOW() - INTERVAL '7 days' AND m.author_id != 'ai') AS participants_7d,
@@ -862,25 +1006,34 @@ export async function adminListRoomsWithActivity(opts: {
       (SELECT COUNT(*) FROM room_files f WHERE f.room_id = r.id)  AS file_count
     FROM rooms r
     LEFT JOIN messages m ON m.room_id = r.id
+    LEFT JOIN allowlisted_creators c ON c.id = r.owner_id
     WHERE ($1::text IS NULL OR r.name ILIKE '%' || $1 || '%')
-    GROUP BY r.id
+      AND ($2::text IS NULL OR r.owner_id = $2)
+      ${archivedClause}
+    GROUP BY r.id, c.display_name
     ORDER BY ${column} ${direction} NULLS LAST
   `;
   const result = await query<{
     id: string;
     name: string;
     created_at: Date;
+    archived_at: Date | null;
+    owner_id: string;
+    owner_display_name: string | null;
     msgs_24h: string;
     msgs_7d: string;
     participants_7d: string;
     last_message_at: Date | null;
     total_participants: string;
     file_count: string;
-  }>(sql, [q && q.trim() ? q.trim() : null]);
+  }>(sql, [q && q.trim() ? q.trim() : null, ownerId ?? null]);
   return result.rows.map((r) => ({
     id: r.id,
     name: r.name,
     createdAt: r.created_at,
+    archivedAt: r.archived_at,
+    ownerId: r.owner_id,
+    ownerDisplayName: r.owner_display_name,
     msgs24h: Number(r.msgs_24h),
     msgs7d: Number(r.msgs_7d),
     participants7d: Number(r.participants_7d),
@@ -888,4 +1041,402 @@ export async function adminListRoomsWithActivity(opts: {
     totalParticipants: Number(r.total_participants),
     fileCount: Number(r.file_count),
   }));
+}
+
+// -------- Room ownership / archive / hard-delete
+
+/** Idempotent: archiving an already-archived room is a no-op (returns true). */
+export async function archiveRoom(id: string): Promise<boolean> {
+  const { rowCount } = await query(
+    `UPDATE rooms SET archived_at = COALESCE(archived_at, NOW()) WHERE id = $1`,
+    [id]
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+/** Idempotent: restoring an already-active room is a no-op (returns true). */
+export async function restoreRoom(id: string): Promise<boolean> {
+  const { rowCount } = await query(
+    `UPDATE rooms SET archived_at = NULL WHERE id = $1`,
+    [id]
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+/**
+ * Reassign room ownership. Returns the previous owner id (for the audit
+ * `room.transfer` metadata) or null if the room doesn't exist. Caller is
+ * responsible for verifying `toOwnerId` references a real allowlisted_creator
+ * row — the FK on `rooms.owner_id` enforces it at the DB level too.
+ */
+export async function transferRoom(
+  id: string,
+  toOwnerId: string
+): Promise<{ fromOwnerId: string } | null> {
+  // CTE captures the pre-update owner explicitly so RETURNING surfaces the
+  // value the UPDATE just replaced.
+  const { rows } = await query<{ from_owner_id: string }>(
+    `WITH prev AS (SELECT owner_id FROM rooms WHERE id = $1)
+     UPDATE rooms r
+        SET owner_id = $2
+       FROM prev
+      WHERE r.id = $1
+      RETURNING prev.owner_id AS from_owner_id`,
+    [id, toOwnerId]
+  );
+  const r = rows[0];
+  return r ? { fromOwnerId: r.from_owner_id } : null;
+}
+
+/**
+ * Snapshot + cascade delete in one transaction. The audit caller logs the
+ * returned snapshot *after* the delete returns so the metadata reflects the
+ * row that just disappeared. Returns null if the room didn't exist.
+ *
+ * Cascade hits messages, message_reactions, participants, room_files via the
+ * existing ON DELETE CASCADE on `rooms.id`. Audit log rows survive (no FK on
+ * `audit_log.room_id` is intentional — see schema v8 comment).
+ */
+export async function hardDeleteRoom(id: string): Promise<{
+  slug: string;
+  name: string;
+  ownerId: string;
+  messageCount: number;
+  fileCount: number;
+} | null> {
+  return tx(async (client) => {
+    const meta = await client.query<{
+      id: string;
+      name: string;
+      owner_id: string;
+      message_count: string;
+      file_count: string;
+    }>(
+      `SELECT
+         r.id,
+         r.name,
+         r.owner_id,
+         (SELECT COUNT(*)::text FROM messages   m WHERE m.room_id = r.id) AS message_count,
+         (SELECT COUNT(*)::text FROM room_files f WHERE f.room_id = r.id) AS file_count
+       FROM rooms r WHERE r.id = $1`,
+      [id]
+    );
+    if (meta.rowCount === 0) return null;
+    const m = meta.rows[0];
+
+    const del = await client.query(`DELETE FROM rooms WHERE id = $1`, [id]);
+    if ((del.rowCount ?? 0) === 0) return null;
+
+    return {
+      slug: m.id,
+      name: m.name,
+      ownerId: m.owner_id,
+      messageCount: parseInt(m.message_count, 10),
+      fileCount: parseInt(m.file_count, 10),
+    };
+  });
+}
+
+// -------- Allowlisted creators (CRUD)
+//
+// Token plaintext never enters or leaves this layer — callers compute the
+// hash + last-4 in lib/creator-auth.ts and pass them in. The store handles
+// rows; auth handles secrets.
+
+export type AllowlistedCreator = {
+  id: string;
+  email: string;
+  displayName: string;
+  isSuperAdmin: boolean;
+  disabledAt: number | null;
+  tokenLastFour: string;
+  tokenRotatedAt: number;
+  createdAt: number;
+  createdBy: string | null;
+};
+
+export type CreatorListRow = AllowlistedCreator & {
+  roomCount: number;
+  lastActivityAt: Date | null;
+};
+
+type CreatorBaseRow = {
+  id: string;
+  email: string;
+  display_name: string;
+  is_super_admin: boolean;
+  disabled_at: Date | null;
+  token_last_four: string;
+  token_rotated_at: Date;
+  created_at: Date;
+  created_by: string | null;
+};
+
+function toAllowlistedCreator(r: CreatorBaseRow): AllowlistedCreator {
+  return {
+    id: r.id,
+    email: r.email,
+    displayName: r.display_name,
+    isSuperAdmin: r.is_super_admin,
+    disabledAt: r.disabled_at ? r.disabled_at.getTime() : null,
+    tokenLastFour: r.token_last_four,
+    tokenRotatedAt: r.token_rotated_at.getTime(),
+    createdAt: r.created_at.getTime(),
+    createdBy: r.created_by,
+  };
+}
+
+/**
+ * Listing for `/admin/users`. Joins room counts and the most recent message
+ * timestamp across the creator's owned rooms. Excludes the synthetic super
+ * admin row by default — it's a system actor, not a manageable user.
+ */
+export async function listCreators(opts?: {
+  includeSuperAdmin?: boolean;
+}): Promise<CreatorListRow[]> {
+  const includeSuper = opts?.includeSuperAdmin ?? false;
+  const { rows } = await query<
+    CreatorBaseRow & { room_count: string; last_activity_at: Date | null }
+  >(
+    `SELECT c.id, c.email, c.display_name, c.is_super_admin, c.disabled_at,
+            c.token_last_four, c.token_rotated_at, c.created_at, c.created_by,
+            COALESCE(rc.room_count, 0)::text AS room_count,
+            la.last_activity_at
+       FROM allowlisted_creators c
+       LEFT JOIN (
+         SELECT owner_id, COUNT(*) AS room_count
+           FROM rooms GROUP BY owner_id
+       ) rc ON rc.owner_id = c.id
+       LEFT JOIN (
+         SELECT r.owner_id, MAX(m.created_at) AS last_activity_at
+           FROM rooms r
+           LEFT JOIN messages m ON m.room_id = r.id
+          GROUP BY r.owner_id
+       ) la ON la.owner_id = c.id
+      WHERE ($1::bool OR c.id <> 'cr_super_admin')
+      ORDER BY c.created_at ASC`,
+    [includeSuper]
+  );
+  return rows.map((r) => ({
+    ...toAllowlistedCreator(r),
+    roomCount: parseInt(r.room_count, 10),
+    lastActivityAt: r.last_activity_at,
+  }));
+}
+
+export async function getCreatorById(id: string): Promise<AllowlistedCreator | null> {
+  const { rows } = await query<CreatorBaseRow>(
+    `SELECT id, email, display_name, is_super_admin, disabled_at,
+            token_last_four, token_rotated_at, created_at, created_by
+       FROM allowlisted_creators WHERE id = $1`,
+    [id]
+  );
+  return rows[0] ? toAllowlistedCreator(rows[0]) : null;
+}
+
+/**
+ * Insert a new allowlisted creator. Caller (lib/creator-auth.ts) generates
+ * the plaintext token, computes hash + last-4, and surfaces the plaintext
+ * once to the operator. Returns either the created row or a tagged conflict
+ * (email collision) so the route can render a friendly message.
+ *
+ * Email is lowercased for the unique-index match; we store the original
+ * casing for display.
+ */
+export async function createCreator(input: {
+  email: string;
+  displayName: string;
+  tokenHash: string;
+  tokenLastFour: string;
+  createdBy: string | null;
+}): Promise<
+  { ok: true; creator: AllowlistedCreator } | { ok: false; error: "email_taken" }
+> {
+  const id = `cr_${nanoid(8)}`;
+  const { rows, rowCount } = await query<CreatorBaseRow>(
+    `INSERT INTO allowlisted_creators
+       (id, email, display_name, token_hash, token_last_four, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (lower(email)) DO NOTHING
+     RETURNING id, email, display_name, is_super_admin, disabled_at,
+               token_last_four, token_rotated_at, created_at, created_by`,
+    [id, input.email, input.displayName, input.tokenHash, input.tokenLastFour, input.createdBy]
+  );
+  if ((rowCount ?? 0) === 0) {
+    return { ok: false, error: "email_taken" };
+  }
+  return { ok: true, creator: toAllowlistedCreator(rows[0]) };
+}
+
+/**
+ * Update display name. Returns the previous value for the audit `from`/`to`
+ * metadata, or null if the row didn't exist. Refuses to touch the synthetic
+ * super-admin row — its display name is structural.
+ */
+export async function updateCreatorDisplayName(
+  id: string,
+  displayName: string
+): Promise<{ from: string } | null> {
+  if (id === "cr_super_admin") return null;
+  const { rows } = await query<{ from: string }>(
+    `WITH prev AS (SELECT display_name FROM allowlisted_creators WHERE id = $1)
+     UPDATE allowlisted_creators c
+        SET display_name = $2
+       FROM prev
+      WHERE c.id = $1
+      RETURNING prev.display_name AS "from"`,
+    [id, displayName]
+  );
+  return rows[0] ?? null;
+}
+
+/**
+ * Toggle disabled state. `disabled = true` sets `disabled_at = NOW()` if the
+ * row is currently enabled (idempotent). `disabled = false` clears it. Returns
+ * the resulting state, or null if the creator doesn't exist. Refuses on the
+ * synthetic super-admin row (would brick `getActor` for the operator).
+ */
+export async function setCreatorDisabled(
+  id: string,
+  disabled: boolean
+): Promise<{ disabledAt: number | null } | null> {
+  if (id === "cr_super_admin") return null;
+  const { rows } = await query<{ disabled_at: Date | null }>(
+    disabled
+      ? `UPDATE allowlisted_creators
+            SET disabled_at = COALESCE(disabled_at, NOW())
+          WHERE id = $1
+          RETURNING disabled_at`
+      : `UPDATE allowlisted_creators
+            SET disabled_at = NULL
+          WHERE id = $1
+          RETURNING disabled_at`,
+    [id]
+  );
+  const r = rows[0];
+  if (!r) return null;
+  return { disabledAt: r.disabled_at ? r.disabled_at.getTime() : null };
+}
+
+/**
+ * Replace the token hash + last-4 atomically and bump `token_rotated_at`. Old
+ * cookies stop working on their next request because the lookup is by
+ * token_hash. Refuses on the super-admin row (sentinel hash must remain
+ * unreachable). Returns true on success.
+ */
+export async function rotateCreatorTokenHash(
+  id: string,
+  tokenHash: string,
+  tokenLastFour: string
+): Promise<boolean> {
+  if (id === "cr_super_admin") return false;
+  const { rowCount } = await query(
+    `UPDATE allowlisted_creators
+        SET token_hash = $2,
+            token_last_four = $3,
+            token_rotated_at = NOW()
+      WHERE id = $1`,
+    [id, tokenHash, tokenLastFour]
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+/**
+ * Delete an allowlisted creator. Refused if the creator owns rooms (FK
+ * RESTRICT would also catch this, but we want a clean tagged result instead
+ * of a raw DB error). Refused on the super-admin row.
+ */
+export async function deleteCreator(id: string): Promise<
+  | { ok: true; email: string }
+  | { ok: false; error: "owns_rooms"; roomCount: number }
+  | { ok: false; error: "not_found" }
+  | { ok: false; error: "is_super_admin" }
+> {
+  if (id === "cr_super_admin") return { ok: false, error: "is_super_admin" };
+  return tx(async (client) => {
+    const sel = await client.query<{ email: string; room_count: string }>(
+      `SELECT c.email,
+              (SELECT COUNT(*)::text FROM rooms r WHERE r.owner_id = c.id) AS room_count
+         FROM allowlisted_creators c WHERE c.id = $1`,
+      [id]
+    );
+    if (sel.rowCount === 0) return { ok: false as const, error: "not_found" as const };
+    const row = sel.rows[0];
+    const roomCount = parseInt(row.room_count, 10);
+    if (roomCount > 0) {
+      return { ok: false as const, error: "owns_rooms" as const, roomCount };
+    }
+    await client.query(`DELETE FROM allowlisted_creators WHERE id = $1`, [id]);
+    return { ok: true as const, email: row.email };
+  });
+}
+
+// -------- Snapshot helpers for audit-before-delete (file / participant)
+
+/**
+ * Single-row file lookup. Returns the same RoomFile shape `getRoom` would
+ * have included, or null if the file doesn't exist in the room. Used by the
+ * delete route to capture a pre-delete snapshot for the audit log.
+ */
+export async function getRoomFileById(
+  roomId: string,
+  fileId: string
+): Promise<RoomFile | null> {
+  const { rows } = await query<{
+    id: string;
+    room_id: string;
+    name: string;
+    mime: string;
+    size_bytes: number;
+    uploaded_by_id: string;
+    extracted_text: string;
+    selected: boolean;
+    uploaded_at: Date;
+  }>(
+    `SELECT id, room_id, name, mime, size_bytes, uploaded_by_id,
+            extracted_text, selected, uploaded_at
+       FROM room_files WHERE room_id = $1 AND id = $2`,
+    [roomId, fileId]
+  );
+  return rows[0] ? toRoomFile(rows[0]) : null;
+}
+
+export async function deleteRoomFile(roomId: string, fileId: string): Promise<boolean> {
+  const { rowCount } = await query(
+    `DELETE FROM room_files WHERE room_id = $1 AND id = $2`,
+    [roomId, fileId]
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+/**
+ * Remove a participant. Snapshot returned for the audit `participant.kick`
+ * metadata; messages and reactions authored by the participant are preserved
+ * (no FK from messages.author_id to participants by design — kicking removes
+ * the live identity but keeps the conversation history intact).
+ */
+export async function removeParticipant(
+  roomId: string,
+  participantId: string
+): Promise<Participant | null> {
+  return tx(async (client) => {
+    const sel = await client.query<{
+      id: string;
+      name: string;
+      email: string;
+      joined_at: Date;
+      last_seen_at: Date | null;
+    }>(
+      `SELECT id, name, email, joined_at, last_seen_at FROM participants
+        WHERE room_id = $1 AND id = $2`,
+      [roomId, participantId]
+    );
+    if (sel.rowCount === 0) return null;
+    const snap = toParticipant(sel.rows[0]);
+    await client.query(
+      `DELETE FROM participants WHERE room_id = $1 AND id = $2`,
+      [roomId, participantId]
+    );
+    return snap;
+  });
 }
