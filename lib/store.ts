@@ -1027,6 +1027,26 @@ export async function setSystemPrompt(
   ]);
 }
 
+/** Post a facilitator announcement as a kind:"system" message.
+ *  Admin bypass: this does NOT check closed_at, so admins can announce on
+ *  closed rooms (e.g. "Session ended, thanks for joining"). */
+export async function postSystemAnnouncement(
+  roomId: string,
+  content: string,
+): Promise<Message> {
+  const msg: Message = {
+    id: nanoid(10),
+    roomId,
+    authorId: "facilitator",
+    authorName: "Facilitator",
+    content: content.slice(0, 4000),
+    createdAt: Date.now(),
+    kind: "system",
+  };
+  await appendMessage(msg);
+  return msg;
+}
+
 // -------- Admin helpers (used by /api/admin/seed)
 
 export async function adminUpsertRoom(input: {
