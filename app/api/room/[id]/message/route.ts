@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   appendMessage,
+  closeExpiredPolls,
   getRecentMessages,
   getSelectedFiles,
   updateMessageContent,
@@ -32,6 +33,11 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   const auth = await requireRoomParticipant(req, id);
   if (!auth.ok) return auth.response;
   const participant = auth.participant;
+
+  // Lazy-close any expired polls so a post-expiry message also acts as a
+  // close trigger for clients with stale tabs.
+  const newlyClosed = await closeExpiredPolls(id);
+  for (const c of newlyClosed) broadcast(id, "poll_closed", c);
 
   const body = await req.json().catch(() => ({}));
   const content = typeof body.content === "string" ? body.content.trim() : "";
