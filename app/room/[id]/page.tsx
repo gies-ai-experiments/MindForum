@@ -204,7 +204,8 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
         return;
       }
       const joinJson: {
-        participantId: string;
+        participantId: string | null;
+        readOnly?: boolean;
         catchupHint?: { should: false } | { should: true; since: number | null };
       } = await res.json().catch(() => ({ participantId: "" }));
       try {

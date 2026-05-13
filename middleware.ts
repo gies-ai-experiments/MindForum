@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { CREATOR_COOKIE } from "@/lib/creator-auth";
+import { CREATOR_COOKIE } from "@/lib/creator-cookie";
 
 /**
  * Gate `/dashboard/*` sub-routes on the creator cookie. The `/dashboard`

@@ -6,7 +6,13 @@ import {
 } from "@/lib/store";
 import { broadcast } from "@/lib/sse";
 import { checkRate, clientIp, rateLimited } from "@/lib/ratelimit";
-import { assertActiveRoom, httpErrorResponse } from "@/lib/creator-auth";
+import {
+  assertActiveRoom,
+  getActor,
+  HttpError,
+  httpErrorResponse,
+} from "@/lib/creator-auth";
+import { getRoomMeta } from "@/lib/store";
 
 export const runtime = "nodejs";
 
@@ -41,6 +47,25 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   try {
     await assertActiveRoom(id);
   } catch (err) {
+    // Owner / super-admin viewing an archived room they own: skip the
+    // participant upsert (which is blocked by assertActiveRoom anyway) and
+    // return a read-only handshake. The page uses this to open the SSE
+    // snapshot without a participant cookie; SSE itself enforces ownership
+    // via assertActiveOrOwnerOnArchive, so this is just a UX shortcut.
+    if (err instanceof HttpError && err.status === 410) {
+      const room = await getRoomMeta(id);
+      const actor = await getActor();
+      const isOwner =
+        !!room && !!actor && (actor.isSuperAdmin || room.ownerId === actor.id);
+      if (isOwner) {
+        return NextResponse.json({
+          participantId: null,
+          readOnly: true,
+          archived: true,
+          catchupHint: { should: false },
+        });
+      }
+    }
     return httpErrorResponse(err);
   }
 

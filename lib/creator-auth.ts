@@ -23,8 +23,8 @@ import {
   type RoomMeta,
 } from "./store";
 
-export const CREATOR_COOKIE = "mindforum_creator_session";
-export const CREATOR_COOKIE_MAX_AGE_S = 60 * 60 * 24 * 365; // 1y
+export { CREATOR_COOKIE, CREATOR_COOKIE_MAX_AGE_S } from "./creator-cookie";
+import { CREATOR_COOKIE } from "./creator-cookie";
 
 export type Creator = {
   id: string;
