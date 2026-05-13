@@ -1,19 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   appendMessage,
-  getParticipant,
+  getClosedPollsForRoom,
   getRecentMessages,
   getSelectedFiles,
   type Message,
 } from "@/lib/store";
 import { query } from "@/lib/db";
 import { broadcast } from "@/lib/sse";
-import { generateBrief } from "@/lib/openai";
+import { generateBrief, type BriefDecision } from "@/lib/openai";
 import { checkRate, clientIp, rateLimited } from "@/lib/ratelimit";
 import {
   assertActiveOrOwnerOnArchive,
   httpErrorResponse,
 } from "@/lib/creator-auth";
+import { requireRoomParticipant } from "@/lib/auth-helpers";
 import { nanoid } from "nanoid";
 
 export const runtime = "nodejs";
@@ -41,23 +42,33 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   // generated message uses author_id="ai" anyway, no participant identity
   // is required for the write.
   if (!(archived && isOwner)) {
-    const pid = req.cookies.get(`mindforum_pid_${id}`)?.value;
-    const participant = pid ? await getParticipant(id, pid) : null;
-    if (!participant) return NextResponse.json({ error: "not_joined" }, { status: 401 });
+    const auth = await requireRoomParticipant(req, id);
+    if (!auth.ok) return auth.response;
   }
 
   void (async () => {
     try {
-      const [messages, selectedFiles, promptRow] = await Promise.all([
+      const [messages, selectedFiles, promptRow, closedPolls] = await Promise.all([
         getRecentMessages(id, 100),
         getSelectedFiles(id),
         query<{ system_prompt: string }>(
           `SELECT system_prompt FROM rooms WHERE id = $1`,
           [id]
         ),
+        getClosedPollsForRoom(id, 100),
       ]);
       const systemPrompt = promptRow.rows[0]?.system_prompt ?? "";
-      const brief = await generateBrief(messages, selectedFiles, systemPrompt);
+      const briefDecisions: BriefDecision[] = closedPolls.map(p => ({
+        question: p.question,
+        closedAt: new Date(p.closedAt ?? Date.now()).toISOString(),
+        winnerText: p.winnerOptionId
+          ? p.tallies.find(t => t.optionId === p.winnerOptionId)?.text ?? null
+          : null,
+        tallies: p.tallies.map(t => ({ option: t.text, votes: t.votes })),
+        totalVotes: p.totalVotes,
+        inconclusive: p.inconclusive,
+      }));
+      const brief = await generateBrief(messages, selectedFiles, systemPrompt, briefDecisions);
 
       const msg: Message = {
         id: nanoid(10),
