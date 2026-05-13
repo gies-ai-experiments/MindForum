@@ -1047,6 +1047,32 @@ export async function postSystemAnnouncement(
   return msg;
 }
 
+/** Per-room participant listing for the admin dashboard.
+ *  Ordered by recency (last_seen_at DESC NULLS LAST, then name ASC).
+ *  Excludes removed participants by default; pass includeRemoved to see them. */
+export async function listParticipantsForAdmin(
+  roomId: string,
+  opts: { includeRemoved?: boolean } = {},
+): Promise<Participant[]> {
+  const filter = opts.includeRemoved ? "" : "AND removed_at IS NULL";
+  const { rows } = await query<{
+    id: string;
+    name: string;
+    email: string;
+    joined_at: Date;
+    last_seen_at: Date | null;
+    muted_at: Date | null;
+    removed_at: Date | null;
+  }>(
+    `SELECT id, name, email, joined_at, last_seen_at, muted_at, removed_at
+       FROM participants
+      WHERE room_id = $1 ${filter}
+      ORDER BY last_seen_at DESC NULLS LAST, name ASC`,
+    [roomId],
+  );
+  return rows.map(toParticipant);
+}
+
 // -------- Admin helpers (used by /api/admin/seed)
 
 export async function adminUpsertRoom(input: {
