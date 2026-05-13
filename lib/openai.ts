@@ -123,6 +123,52 @@ export async function generateBrief(
   return JSON.parse(raw) as Brief;
 }
 
+export type PollDraft = {
+  question: string;
+  options: string[];   // 0..5; empty array signals "no convergeable question"
+};
+
+const POLL_DRAFT_SYSTEM = `You help a MindForum room run a quick vote. Read the recent conversation and propose ONE decision-point that participants are implicitly debating. Output a single question and 2 to 5 mutually exclusive options grounded in what participants actually said. Do NOT invent options the group didn't discuss. If the conversation has no convergeable decision yet, return options: [].`;
+
+export async function draftPollFromHistory(
+  recentMessages: Message[],
+): Promise<PollDraft> {
+  const res = await client().chat.completions.create({
+    model: MODEL_BRIEF,
+    response_format: {
+      type: "json_schema",
+      json_schema: {
+        name: "PollDraft",
+        strict: true,
+        schema: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            question: { type: "string" },
+            options: {
+              type: "array",
+              minItems: 0,
+              maxItems: 5,
+              items: { type: "string" },
+            },
+          },
+          required: ["question", "options"],
+        },
+      },
+    },
+    messages: [
+      { role: "system", content: POLL_DRAFT_SYSTEM },
+      ...historyBlock(recentMessages),
+    ],
+  });
+  const raw = res.choices[0]?.message?.content ?? `{"question":"","options":[]}`;
+  try {
+    return JSON.parse(raw) as PollDraft;
+  } catch {
+    return { question: "", options: [] };
+  }
+}
+
 const ROLLING_SUMMARY_RECENCY = 15;
 
 function formatMsgsForPrompt(msgs: Message[]): string {
