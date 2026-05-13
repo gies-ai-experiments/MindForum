@@ -72,6 +72,48 @@ export type RoomMeta = {
   archivedAt: number | null;
 };
 
+export type Poll = {
+  id: string;
+  roomId: string;
+  authorId: string;
+  authorName: string;
+  question: string;
+  status: "open" | "closed";
+  createdAt: number;
+  closesAt: number | null;
+  closedAt: number | null;
+  closedBy: string | null;
+  options: PollOption[];
+};
+
+export type PollOption = {
+  id: string;
+  pollId: string;
+  position: number;
+  text: string;
+};
+
+export type PollVote = {
+  pollId: string;
+  participantId: string;
+  optionId: string;
+  castAt: number;
+};
+
+export type OpenPollView = Omit<Poll, "status"> & {
+  status: "open";
+  totalVotes: number;
+  myVoteOptionId: string | null;
+};
+
+export type ClosedPollView = Omit<Poll, "status"> & {
+  status: "closed";
+  totalVotes: number;
+  tallies: { optionId: string; text: string; votes: number }[];
+  winnerOptionId: string | null;
+  inconclusive: boolean;
+};
+
 // -------- Row → domain mappers
 
 function toParticipant(r: {
