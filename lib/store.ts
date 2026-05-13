@@ -60,6 +60,7 @@ export type Room = {
   ownerId: string;
   archivedAt: number | null;
   systemPrompt: string;
+  closedAt: number | null;
   participants: Participant[];
   messages: Message[];
   files: RoomFile[];
@@ -214,6 +215,7 @@ export async function createRoom(
     ownerId: r.owner_id,
     archivedAt: r.archived_at ? r.archived_at.getTime() : null,
     createdAt: r.created_at.getTime(),
+    closedAt: null,
     participants: [],
     messages: [],
     files: [],
@@ -305,8 +307,9 @@ export async function getRoom(id: string): Promise<Room | null> {
       owner_id: string;
       archived_at: Date | null;
       created_at: Date;
+      closed_at: Date | null;
     }>(
-      `SELECT id, name, system_prompt, created_by_id, owner_id, archived_at, created_at
+      `SELECT id, name, system_prompt, created_by_id, owner_id, archived_at, created_at, closed_at
        FROM rooms WHERE id = $1`,
       [id]
     );
@@ -367,6 +370,7 @@ export async function getRoom(id: string): Promise<Room | null> {
       ownerId: r.owner_id,
       archivedAt: r.archived_at ? r.archived_at.getTime() : null,
       createdAt: r.created_at.getTime(),
+      closedAt: r.closed_at ? r.closed_at.getTime() : null,
       participants: participantsQ.rows.map(toParticipant),
       messages: messagesQ.rows.map(toMessage),
       files: filesQ.rows.map(toRoomFile),
@@ -944,6 +948,22 @@ export function snapshot(
     openPolls,
     recentClosedPolls,
   };
+}
+
+// -------- Admin facilitator mutators (close/reopen room, mute/remove participant)
+
+/** Lock a room: no more writes (messages, polls, uploads, briefs) until reopened.
+ *  Idempotent — re-closing keeps the original timestamp via COALESCE. */
+export async function closeRoom(roomId: string): Promise<void> {
+  await query(
+    `UPDATE rooms SET closed_at = COALESCE(closed_at, NOW()) WHERE id = $1`,
+    [roomId],
+  );
+}
+
+/** Unlock a previously closed room. No-op if already open. */
+export async function reopenRoom(roomId: string): Promise<void> {
+  await query(`UPDATE rooms SET closed_at = NULL WHERE id = $1`, [roomId]);
 }
 
 // -------- Admin helpers (used by /api/admin/seed)
