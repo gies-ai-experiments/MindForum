@@ -1666,3 +1666,74 @@ export async function getClosedPollsForRoom(
   }
   return views.reverse();
 }
+
+export async function castVote(input: {
+  pollId: string;
+  participantId: string;
+  optionId: string;
+}): Promise<{ totalVotes: number }> {
+  return tx(async (client) => {
+    const openCheck = await client.query<{ ok: number }>(
+      `SELECT 1 AS ok FROM polls
+       WHERE id = $1 AND status = 'open'
+         AND (closes_at IS NULL OR closes_at > NOW())`,
+      [input.pollId],
+    );
+    if (openCheck.rowCount === 0) throw new Error("poll_not_open");
+    const optCheck = await client.query<{ ok: number }>(
+      `SELECT 1 AS ok FROM poll_options WHERE id = $1 AND poll_id = $2`,
+      [input.optionId, input.pollId],
+    );
+    if (optCheck.rowCount === 0) throw new Error("invalid_option");
+    await client.query(
+      `INSERT INTO poll_votes (poll_id, participant_id, option_id, cast_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (poll_id, participant_id)
+       DO UPDATE SET option_id = EXCLUDED.option_id, cast_at = NOW()`,
+      [input.pollId, input.participantId, input.optionId],
+    );
+    const countRes = await client.query<{ n: string }>(
+      `SELECT COUNT(*)::text AS n FROM poll_votes WHERE poll_id = $1`,
+      [input.pollId],
+    );
+    return { totalVotes: parseInt(countRes.rows[0]?.n ?? "0", 10) };
+  });
+}
+
+export async function closePoll(input: {
+  pollId: string;
+  closedBy: string;
+}): Promise<ClosedPollView | null> {
+  const { rows } = await query<{ room_id: string }>(
+    `UPDATE polls
+     SET status='closed', closed_at=NOW(), closed_by=$2
+     WHERE id=$1 AND status='open'
+     RETURNING room_id`,
+    [input.pollId, input.closedBy],
+  );
+  if (rows.length === 0) return null;
+  const closed = await getClosedPollsForRoom(rows[0].room_id, 100);
+  return closed.find(p => p.id === input.pollId) ?? null;
+}
+
+/**
+ * Lazy expiry: closes all polls in a room whose closes_at has passed.
+ * Returns ClosedPollView for each newly-closed poll. Idempotent —
+ * the WHERE status='open' guard prevents double-close.
+ */
+export async function closeExpiredPolls(roomId: string): Promise<ClosedPollView[]> {
+  const { rows } = await query<{ id: string }>(
+    `UPDATE polls
+     SET status='closed', closed_at=NOW(), closed_by='auto'
+     WHERE room_id=$1
+       AND status='open'
+       AND closes_at IS NOT NULL
+       AND closes_at <= NOW()
+     RETURNING id`,
+    [roomId],
+  );
+  if (rows.length === 0) return [];
+  const closed = await getClosedPollsForRoom(roomId, 100);
+  const closedIds = new Set(rows.map(r => r.id));
+  return closed.filter(p => closedIds.has(p.id));
+}
