@@ -996,6 +996,21 @@ export async function setParticipantMuted(
   );
 }
 
+/** Mark a participant as removed (per-session kick).
+ *  They can rejoin via email upsert; this just invalidates the current cookie path.
+ *  Idempotent via COALESCE — second remove keeps the original timestamp. */
+export async function setParticipantRemoved(
+  roomId: string,
+  participantId: string,
+): Promise<void> {
+  await query(
+    `UPDATE participants
+        SET removed_at = COALESCE(removed_at, NOW())
+      WHERE room_id = $1 AND id = $2`,
+    [roomId, participantId],
+  );
+}
+
 // -------- Admin helpers (used by /api/admin/seed)
 
 export async function adminUpsertRoom(input: {
