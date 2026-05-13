@@ -38,6 +38,29 @@ function safeNext(raw: string | null | undefined): string {
   return raw;
 }
 
+/**
+ * GET: clear the creator cookie. Used by `/dashboard` (server component) to
+ * recycle a stale cookie when getCreator() returns null but the browser
+ * still holds a `mindforum_creator_session` value (token rotated, creator
+ * disabled, or row deleted). Redirects back to /dashboard so the SignInForm
+ * renders with `?err=session_expired`. Same `next` allowlist as POST.
+ */
+export async function GET(req: NextRequest) {
+  const next = safeNext(req.nextUrl.searchParams.get("next"));
+  const url = publicUrl(req, "/dashboard");
+  url.searchParams.set("err", "session_expired");
+  if (next !== "/dashboard") url.searchParams.set("next", next);
+  const res = NextResponse.redirect(url);
+  res.cookies.set(CREATOR_COOKIE, "", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 0,
+  });
+  return res;
+}
+
 export async function POST(req: NextRequest) {
   const rate = checkRate("creator-session", clientIp(req), 10, 60 * 1000);
   if (!rate.allowed) return rateLimited(rate.retryAfterSeconds);

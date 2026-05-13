@@ -1,5 +1,7 @@
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { getCreator } from "@/lib/creator-auth";
+import { CREATOR_COOKIE } from "@/lib/creator-cookie";
 import { adminListRoomsWithActivity } from "@/lib/store";
 import SignInForm from "./SignInForm";
 import SignOutButton from "./SignOutButton";
@@ -30,6 +32,15 @@ export default async function DashboardPage({
   const creator = await getCreator();
 
   if (!creator) {
+    // If a stale cookie is still present (token rotated, creator disabled,
+    // or row deleted), middleware would let the user back into bookmarked
+    // /dashboard/sub-routes. Recycle the cookie via the auth GET handler so
+    // the next request lands on the SignInForm clean.
+    const ck = await cookies();
+    if (ck.get(CREATOR_COOKIE)?.value) {
+      const target = sp.next ? `/dashboard/auth?next=${encodeURIComponent(sp.next)}` : "/dashboard/auth";
+      redirect(target);
+    }
     return <SignInForm error={sp.err} next={sp.next} />;
   }
 

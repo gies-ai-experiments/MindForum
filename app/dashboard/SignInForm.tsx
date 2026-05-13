@@ -10,7 +10,9 @@ export default function SignInForm({
       ? "Invalid token."
       : error === "missing_token"
         ? "Paste your token to continue."
-        : null;
+        : error === "session_expired"
+          ? "Your session expired. Sign in again."
+          : null;
 
   return (
     <main
