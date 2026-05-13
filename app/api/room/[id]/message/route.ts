@@ -38,6 +38,13 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   if (!auth.ok) return auth.response;
   const participant = auth.participant;
 
+  // Shadow-mute: muted participants get a fake-success response so their own
+  // UI shows the message (optimistic), but the row never enters the DB and
+  // nobody else is broadcast to.
+  if (participant.mutedAt != null) {
+    return NextResponse.json({ ok: true, id: nanoid(10) });
+  }
+
   // Lazy-close any expired polls so a post-expiry message also acts as a
   // close trigger for clients with stale tabs.
   const newlyClosed = await closeExpiredPolls(id);
