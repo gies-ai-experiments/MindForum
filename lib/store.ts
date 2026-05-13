@@ -12,6 +12,7 @@ import { nanoid } from "nanoid";
 import type { PoolClient } from "pg";
 import { pool, query, tx } from "./db";
 import type { SortKey, Direction } from "./admin-sort";
+import { computeTallies, type OptionRow, type VoteRow } from "./poll-logic";
 
 export type Participant = {
   id: string;
@@ -1481,4 +1482,187 @@ export async function removeParticipant(
     );
     return snap;
   });
+// -------- Polls
+
+function newPollId(): string { return `pl_${nanoid(10)}`; }
+function newOptionId(): string { return `po_${nanoid(10)}`; }
+
+type PollRow = {
+  id: string;
+  room_id: string;
+  author_id: string;
+  question: string;
+  status: string;
+  created_at: Date;
+  closes_at: Date | null;
+  closed_at: Date | null;
+  closed_by: string | null;
+};
+
+type OptionDbRow = {
+  id: string;
+  poll_id: string;
+  position: number;
+  text: string;
+};
+
+function toPollOption(r: OptionDbRow): PollOption {
+  return { id: r.id, pollId: r.poll_id, position: r.position, text: r.text };
+}
+
+function toPoll(row: PollRow, authorName: string, options: PollOption[]): Poll {
+  return {
+    id: row.id,
+    roomId: row.room_id,
+    authorId: row.author_id,
+    authorName,
+    question: row.question,
+    status: row.status as "open" | "closed",
+    createdAt: row.created_at.getTime(),
+    closesAt: row.closes_at ? row.closes_at.getTime() : null,
+    closedAt: row.closed_at ? row.closed_at.getTime() : null,
+    closedBy: row.closed_by,
+    options,
+  };
+}
+
+export async function createPoll(input: {
+  roomId: string;
+  authorId: string;
+  question: string;
+  options: string[]; // pre-validated
+  closesAt: Date | null;
+}): Promise<Poll> {
+  const id = newPollId();
+  return tx(async (client) => {
+    const pollRes = await client.query<PollRow>(
+      `INSERT INTO polls (id, room_id, author_id, question, status, closes_at)
+       VALUES ($1, $2, $3, $4, 'open', $5)
+       RETURNING id, room_id, author_id, question, status, created_at,
+                 closes_at, closed_at, closed_by`,
+      [id, input.roomId, input.authorId, input.question, input.closesAt],
+    );
+    const pollRow = pollRes.rows[0];
+    const optionRows: OptionDbRow[] = [];
+    for (let i = 0; i < input.options.length; i++) {
+      const oRes = await client.query<OptionDbRow>(
+        `INSERT INTO poll_options (id, poll_id, position, text)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id, poll_id, position, text`,
+        [newOptionId(), id, i, input.options[i]],
+      );
+      optionRows.push(oRes.rows[0]);
+    }
+    const authorRes = await client.query<{ name: string }>(
+      `SELECT name FROM participants WHERE id = $1 AND room_id = $2`,
+      [input.authorId, input.roomId],
+    );
+    const authorName = authorRes.rows[0]?.name ?? "(unknown)";
+    return toPoll(pollRow, authorName, optionRows.map(toPollOption));
+  });
+}
+
+export async function getPoll(id: string): Promise<Poll | null> {
+  const { rows } = await query<PollRow & { author_name: string | null }>(
+    `SELECT p.id, p.room_id, p.author_id, p.question, p.status, p.created_at,
+            p.closes_at, p.closed_at, p.closed_by,
+            pt.name AS author_name
+     FROM polls p
+     LEFT JOIN participants pt ON pt.id = p.author_id AND pt.room_id = p.room_id
+     WHERE p.id = $1`,
+    [id],
+  );
+  if (rows.length === 0) return null;
+  const r = rows[0];
+  const optsRes = await query<OptionDbRow>(
+    `SELECT id, poll_id, position, text FROM poll_options
+     WHERE poll_id = $1 ORDER BY position`,
+    [id],
+  );
+  return toPoll(r, r.author_name ?? "(unknown)", optsRes.rows.map(toPollOption));
+}
+
+export async function getOpenPollsForRoom(
+  roomId: string,
+  requesterId: string,
+): Promise<OpenPollView[]> {
+  const { rows: polls } = await query<PollRow & { author_name: string | null }>(
+    `SELECT p.id, p.room_id, p.author_id, p.question, p.status, p.created_at,
+            p.closes_at, p.closed_at, p.closed_by,
+            pt.name AS author_name
+     FROM polls p
+     LEFT JOIN participants pt ON pt.id = p.author_id AND pt.room_id = p.room_id
+     WHERE p.room_id = $1 AND p.status = 'open'
+     ORDER BY p.created_at ASC`,
+    [roomId],
+  );
+  const views: OpenPollView[] = [];
+  for (const p of polls) {
+    const optsRes = await query<OptionDbRow>(
+      `SELECT id, poll_id, position, text FROM poll_options
+       WHERE poll_id = $1 ORDER BY position`,
+      [p.id],
+    );
+    const countRes = await query<{ n: string }>(
+      `SELECT COUNT(*)::text AS n FROM poll_votes WHERE poll_id = $1`,
+      [p.id],
+    );
+    const totalVotes = parseInt(countRes.rows[0]?.n ?? "0", 10);
+    const myRes = await query<{ option_id: string }>(
+      `SELECT option_id FROM poll_votes
+       WHERE poll_id = $1 AND participant_id = $2`,
+      [p.id, requesterId],
+    );
+    const base = toPoll(p, p.author_name ?? "(unknown)", optsRes.rows.map(toPollOption));
+    views.push({
+      ...base,
+      status: "open",
+      totalVotes,
+      myVoteOptionId: myRes.rows[0]?.option_id ?? null,
+    });
+  }
+  return views;
+}
+
+export async function getClosedPollsForRoom(
+  roomId: string,
+  limit = 50,
+): Promise<ClosedPollView[]> {
+  const { rows: polls } = await query<PollRow & { author_name: string | null }>(
+    `SELECT p.id, p.room_id, p.author_id, p.question, p.status, p.created_at,
+            p.closes_at, p.closed_at, p.closed_by,
+            pt.name AS author_name
+     FROM polls p
+     LEFT JOIN participants pt ON pt.id = p.author_id AND pt.room_id = p.room_id
+     WHERE p.room_id = $1 AND p.status = 'closed'
+     ORDER BY p.closed_at DESC
+     LIMIT $2`,
+    [roomId, limit],
+  );
+  const views: ClosedPollView[] = [];
+  for (const p of polls) {
+    const optsRes = await query<OptionDbRow>(
+      `SELECT id, poll_id, position, text FROM poll_options
+       WHERE poll_id = $1 ORDER BY position`,
+      [p.id],
+    );
+    const votesRes = await query<{ option_id: string }>(
+      `SELECT option_id FROM poll_votes WHERE poll_id = $1`,
+      [p.id],
+    );
+    const tally = computeTallies(
+      optsRes.rows.map((o): OptionRow => ({ id: o.id, position: o.position, text: o.text })),
+      votesRes.rows.map((v): VoteRow => ({ optionId: v.option_id })),
+    );
+    const base = toPoll(p, p.author_name ?? "(unknown)", optsRes.rows.map(toPollOption));
+    views.push({
+      ...base,
+      status: "closed",
+      totalVotes: tally.totalVotes,
+      tallies: tally.tallies,
+      winnerOptionId: tally.winnerOptionId,
+      inconclusive: tally.inconclusive,
+    });
+  }
+  return views.reverse();
 }
