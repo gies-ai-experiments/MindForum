@@ -20,6 +20,8 @@ export type Participant = {
   email: string;
   joinedAt: number;
   lastSeenAt: number | null;
+  mutedAt: number | null;
+  removedAt: number | null;
 };
 
 export type ReactionSummary = {
@@ -124,6 +126,8 @@ function toParticipant(r: {
   email: string;
   joined_at: Date;
   last_seen_at: Date | null;
+  muted_at: Date | null;
+  removed_at: Date | null;
 }): Participant {
   return {
     id: r.id,
@@ -131,6 +135,8 @@ function toParticipant(r: {
     email: r.email,
     joinedAt: r.joined_at.getTime(),
     lastSeenAt: r.last_seen_at ? r.last_seen_at.getTime() : null,
+    mutedAt: r.muted_at ? r.muted_at.getTime() : null,
+    removedAt: r.removed_at ? r.removed_at.getTime() : null,
   };
 }
 
@@ -323,8 +329,10 @@ export async function getRoom(id: string): Promise<Room | null> {
         email: string;
         joined_at: Date;
         last_seen_at: Date | null;
+        muted_at: Date | null;
+        removed_at: Date | null;
       }>(
-        `SELECT id, name, email, joined_at, last_seen_at FROM participants
+        `SELECT id, name, email, joined_at, last_seen_at, muted_at, removed_at FROM participants
          WHERE room_id = $1 ORDER BY joined_at ASC`,
         [id]
       ),
@@ -432,8 +440,10 @@ export async function upsertParticipant(
       email: string;
       joined_at: Date;
       last_seen_at: Date | null;
+      muted_at: Date | null;
+      removed_at: Date | null;
     }>(
-      `SELECT id, name, email, joined_at, last_seen_at FROM participants
+      `SELECT id, name, email, joined_at, last_seen_at, muted_at, removed_at FROM participants
        WHERE room_id = $1 AND lower(email) = lower($2)`,
       [roomId, email]
     );
@@ -448,10 +458,12 @@ export async function upsertParticipant(
       email: string;
       joined_at: Date;
       last_seen_at: Date | null;
+      muted_at: Date | null;
+      removed_at: Date | null;
     }>(
       `INSERT INTO participants (id, room_id, name, email)
        VALUES ($1, $2, $3, $4)
-       RETURNING id, name, email, joined_at, last_seen_at`,
+       RETURNING id, name, email, joined_at, last_seen_at, muted_at, removed_at`,
       [id, roomId, name, email]
     );
     return toParticipant(rows[0]);
@@ -468,8 +480,10 @@ export async function getParticipant(
     email: string;
     joined_at: Date;
     last_seen_at: Date | null;
+    muted_at: Date | null;
+    removed_at: Date | null;
   }>(
-    `SELECT id, name, email, joined_at, last_seen_at FROM participants
+    `SELECT id, name, email, joined_at, last_seen_at, muted_at, removed_at FROM participants
      WHERE room_id = $1 AND id = $2`,
     [roomId, participantId]
   );
@@ -964,6 +978,22 @@ export async function closeRoom(roomId: string): Promise<void> {
 /** Unlock a previously closed room. No-op if already open. */
 export async function reopenRoom(roomId: string): Promise<void> {
   await query(`UPDATE rooms SET closed_at = NULL WHERE id = $1`, [roomId]);
+}
+
+/** Shadow-mute (true) or unmute (false) a participant. Idempotent via COALESCE. */
+export async function setParticipantMuted(
+  roomId: string,
+  participantId: string,
+  muted: boolean,
+): Promise<void> {
+  await query(
+    muted
+      ? `UPDATE participants SET muted_at = COALESCE(muted_at, NOW())
+           WHERE room_id = $1 AND id = $2`
+      : `UPDATE participants SET muted_at = NULL
+           WHERE room_id = $1 AND id = $2`,
+    [roomId, participantId],
+  );
 }
 
 // -------- Admin helpers (used by /api/admin/seed)
