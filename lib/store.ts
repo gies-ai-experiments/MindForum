@@ -35,7 +35,7 @@ export type Message = {
   authorName: string;
   content: string;
   createdAt: number;
-  kind?: "chat" | "brief";
+  kind?: "chat" | "brief" | "system";
   reactions?: ReactionSummary[];
   editedAt?: number | null;
 };
