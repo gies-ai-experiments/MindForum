@@ -15,6 +15,7 @@ import {
   httpErrorResponse,
 } from "@/lib/creator-auth";
 import { requireRoomParticipant } from "@/lib/auth-helpers";
+import { roomIsClosed } from "@/lib/room-state";
 import { nanoid } from "nanoid";
 
 export const runtime = "nodejs";
@@ -34,6 +35,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     ({ archived, isOwner } = await assertActiveOrOwnerOnArchive(id));
   } catch (err) {
     return httpErrorResponse(err);
+  }
+  if (await roomIsClosed(id)) {
+    return NextResponse.json({ error: "room_closed" }, { status: 410 });
   }
 
   // Active rooms still require participant membership. Archived owners reach
