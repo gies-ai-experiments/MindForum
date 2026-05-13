@@ -71,20 +71,35 @@ export async function* chatReplyStream(
   }
 }
 
+export type BriefDecision = {
+  question: string;
+  closedAt: string;            // ISO 8601
+  winnerText: string | null;
+  tallies: { option: string; votes: number }[];
+  totalVotes: number;
+  inconclusive: boolean;
+};
+
 export type Brief = {
   themes: string[];
   outline: { section: string; points: string[] }[];
   risks: string[];
   nextSteps: string[];
   suggestedCollaborators: string[];
+  decisions: BriefDecision[];
 };
 
 export async function generateBrief(
   messages: Message[],
   files: RoomFile[],
-  systemPrompt = ""
+  systemPrompt = "",
+  closedPolls: BriefDecision[] = [],
 ): Promise<Brief> {
-  const system = `You turn a MindForum conversation and shared files into a structured project brief. Be specific, not generic. Every item should be grounded in the conversation or the files. If a section has no grounding, return an empty array for it rather than inventing content.${roomGuidanceBlock(systemPrompt)}${fileBlock(files)}`;
+  const pollBlock = closedPolls.length === 0
+    ? ""
+    : `\n\nClosed polls (echo verbatim into decisions[]; do not edit text or counts):\n${JSON.stringify(closedPolls)}`;
+
+  const system = `You turn a MindForum conversation, shared files, and any closed polls into a structured project brief. Be specific, not generic. Every item should be grounded in the conversation, the files, or the polls. If a section has no grounding, return an empty array for it rather than inventing content.${roomGuidanceBlock(systemPrompt)}${fileBlock(files)}${pollBlock}`;
   const res = await client().chat.completions.create({
     model: MODEL_BRIEF,
     response_format: {
@@ -112,15 +127,45 @@ export async function generateBrief(
             risks: { type: "array", items: { type: "string" } },
             nextSteps: { type: "array", items: { type: "string" } },
             suggestedCollaborators: { type: "array", items: { type: "string" } },
+            decisions: {
+              type: "array",
+              items: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  question: { type: "string" },
+                  closedAt: { type: "string" },
+                  winnerText: { type: ["string", "null"] },
+                  tallies: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      additionalProperties: false,
+                      properties: {
+                        option: { type: "string" },
+                        votes: { type: "integer" },
+                      },
+                      required: ["option", "votes"],
+                    },
+                  },
+                  totalVotes: { type: "integer" },
+                  inconclusive: { type: "boolean" },
+                },
+                required: ["question", "closedAt", "winnerText", "tallies", "totalVotes", "inconclusive"],
+              },
+            },
           },
-          required: ["themes", "outline", "risks", "nextSteps", "suggestedCollaborators"],
+          required: ["themes", "outline", "risks", "nextSteps", "suggestedCollaborators", "decisions"],
         },
       },
     },
     messages: [{ role: "system", content: system }, ...historyBlock(messages)],
   });
   const raw = res.choices[0]?.message?.content ?? "{}";
-  return JSON.parse(raw) as Brief;
+  const parsed = JSON.parse(raw) as Brief;
+  // Post-validate: overwrite any echo drift with DB-canonical data.
+  parsed.decisions = closedPolls;
+  return parsed;
 }
 
 export type PollDraft = {
