@@ -1011,6 +1011,22 @@ export async function setParticipantRemoved(
   );
 }
 
+/** Rename a room. Caller validates length. */
+export async function renameRoom(roomId: string, name: string): Promise<void> {
+  await query(`UPDATE rooms SET name = $2 WHERE id = $1`, [roomId, name]);
+}
+
+/** Replace the room's system prompt wholesale. Caller validates length. */
+export async function setSystemPrompt(
+  roomId: string,
+  systemPrompt: string,
+): Promise<void> {
+  await query(`UPDATE rooms SET system_prompt = $2 WHERE id = $1`, [
+    roomId,
+    systemPrompt,
+  ]);
+}
+
 // -------- Admin helpers (used by /api/admin/seed)
 
 export async function adminUpsertRoom(input: {
