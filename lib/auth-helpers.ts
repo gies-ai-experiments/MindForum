@@ -20,7 +20,7 @@ export async function requireRoomParticipant(
 ): Promise<AuthResult> {
   const pid = req.cookies.get(`mindforum_pid_${roomId}`)?.value;
   const participant = pid ? await getParticipant(roomId, pid) : null;
-  if (!participant) {
+  if (!participant || participant.removedAt != null) {
     return {
       ok: false,
       response: NextResponse.json({ error: "not_joined" }, { status: 401 }),
