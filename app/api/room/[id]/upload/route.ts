@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { addFile, getParticipant, type RoomFile } from "@/lib/store";
+import { addFile, type RoomFile } from "@/lib/store";
 import { broadcast } from "@/lib/sse";
 import { parseFile } from "@/lib/parse";
 import { checkRate, clientIp, rateLimited } from "@/lib/ratelimit";
 import { assertActiveRoom, httpErrorResponse } from "@/lib/creator-auth";
 import { logAudit } from "@/lib/audit";
+import { requireRoomParticipant } from "@/lib/auth-helpers";
+import { roomIsClosed } from "@/lib/room-state";
 import { nanoid } from "nanoid";
 
 export const runtime = "nodejs";
@@ -22,10 +24,13 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   } catch (err) {
     return httpErrorResponse(err);
   }
+  if (await roomIsClosed(id)) {
+    return NextResponse.json({ error: "room_closed" }, { status: 410 });
+  }
 
-  const pid = req.cookies.get(`mindforum_pid_${id}`)?.value;
-  const participant = pid ? await getParticipant(id, pid) : null;
-  if (!participant) return NextResponse.json({ error: "not_joined" }, { status: 401 });
+  const auth = await requireRoomParticipant(req, id);
+  if (!auth.ok) return auth.response;
+  const participant = auth.participant;
 
   const form = await req.formData();
   const file = form.get("file");

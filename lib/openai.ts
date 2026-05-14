@@ -71,20 +71,35 @@ export async function* chatReplyStream(
   }
 }
 
+export type BriefDecision = {
+  question: string;
+  closedAt: string;            // ISO 8601
+  winnerText: string | null;
+  tallies: { option: string; votes: number }[];
+  totalVotes: number;
+  inconclusive: boolean;
+};
+
 export type Brief = {
   themes: string[];
   outline: { section: string; points: string[] }[];
   risks: string[];
   nextSteps: string[];
   suggestedCollaborators: string[];
+  decisions: BriefDecision[];
 };
 
 export async function generateBrief(
   messages: Message[],
   files: RoomFile[],
-  systemPrompt = ""
+  systemPrompt = "",
+  closedPolls: BriefDecision[] = [],
 ): Promise<Brief> {
-  const system = `You turn a MindForum conversation and shared files into a structured project brief. Be specific, not generic. Every item should be grounded in the conversation or the files. If a section has no grounding, return an empty array for it rather than inventing content.${roomGuidanceBlock(systemPrompt)}${fileBlock(files)}`;
+  const pollBlock = closedPolls.length === 0
+    ? ""
+    : `\n\nClosed polls (echo verbatim into decisions[]; do not edit text or counts):\n${JSON.stringify(closedPolls)}`;
+
+  const system = `You turn a MindForum conversation, shared files, and any closed polls into a structured project brief. Be specific, not generic. Every item should be grounded in the conversation, the files, or the polls. If a section has no grounding, return an empty array for it rather than inventing content.${roomGuidanceBlock(systemPrompt)}${fileBlock(files)}${pollBlock}`;
   const res = await client().chat.completions.create({
     model: MODEL_BRIEF,
     response_format: {
@@ -112,15 +127,93 @@ export async function generateBrief(
             risks: { type: "array", items: { type: "string" } },
             nextSteps: { type: "array", items: { type: "string" } },
             suggestedCollaborators: { type: "array", items: { type: "string" } },
+            decisions: {
+              type: "array",
+              items: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  question: { type: "string" },
+                  closedAt: { type: "string" },
+                  winnerText: { type: ["string", "null"] },
+                  tallies: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      additionalProperties: false,
+                      properties: {
+                        option: { type: "string" },
+                        votes: { type: "integer" },
+                      },
+                      required: ["option", "votes"],
+                    },
+                  },
+                  totalVotes: { type: "integer" },
+                  inconclusive: { type: "boolean" },
+                },
+                required: ["question", "closedAt", "winnerText", "tallies", "totalVotes", "inconclusive"],
+              },
+            },
           },
-          required: ["themes", "outline", "risks", "nextSteps", "suggestedCollaborators"],
+          required: ["themes", "outline", "risks", "nextSteps", "suggestedCollaborators", "decisions"],
         },
       },
     },
     messages: [{ role: "system", content: system }, ...historyBlock(messages)],
   });
   const raw = res.choices[0]?.message?.content ?? "{}";
-  return JSON.parse(raw) as Brief;
+  const parsed = JSON.parse(raw) as Brief;
+  // Post-validate: overwrite any echo drift with DB-canonical data.
+  parsed.decisions = closedPolls;
+  return parsed;
+}
+
+export type PollDraft = {
+  question: string;
+  options: string[];   // 0..5; empty array signals "no convergeable question"
+};
+
+const POLL_DRAFT_SYSTEM = `You help a MindForum room run a quick vote. Read the recent conversation and propose ONE decision-point that participants are implicitly debating. Output a single question and 2 to 5 mutually exclusive options grounded in what participants actually said. Do NOT invent options the group didn't discuss. If the conversation has no convergeable decision yet, return options: [].`;
+
+export async function draftPollFromHistory(
+  recentMessages: Message[],
+  systemPrompt = "",
+): Promise<PollDraft> {
+  const system = `${POLL_DRAFT_SYSTEM}${roomGuidanceBlock(systemPrompt)}`;
+  const res = await client().chat.completions.create({
+    model: MODEL_BRIEF,
+    response_format: {
+      type: "json_schema",
+      json_schema: {
+        name: "PollDraft",
+        strict: true,
+        schema: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            question: { type: "string" },
+            options: {
+              type: "array",
+              minItems: 0,
+              maxItems: 5,
+              items: { type: "string" },
+            },
+          },
+          required: ["question", "options"],
+        },
+      },
+    },
+    messages: [
+      { role: "system", content: system },
+      ...historyBlock(recentMessages),
+    ],
+  });
+  const raw = res.choices[0]?.message?.content ?? `{"question":"","options":[]}`;
+  try {
+    return JSON.parse(raw) as PollDraft;
+  } catch {
+    return { question: "", options: [] };
+  }
 }
 
 const ROLLING_SUMMARY_RECENCY = 15;

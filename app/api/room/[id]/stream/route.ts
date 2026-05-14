@@ -1,11 +1,14 @@
 import { NextRequest } from "next/server";
 import {
+  closeExpiredPolls,
+  getClosedPollsForRoom,
+  getOpenPollsForRoom,
   getReactionsForRoom,
   getRoom,
   setParticipantLastSeen,
   snapshot,
 } from "@/lib/store";
-import { subscribe, unsubscribe } from "@/lib/sse";
+import { broadcast, subscribe, unsubscribe } from "@/lib/sse";
 import { assertActiveOrOwnerOnArchive, HttpError } from "@/lib/creator-auth";
 
 export const dynamic = "force-dynamic";
@@ -27,18 +30,33 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     console.error("stream gate failed:", err);
     return new Response("internal", { status: 500 });
   }
-  const [room, reactions] = await Promise.all([getRoom(id), getReactionsForRoom(id)]);
-  if (!room) return new Response("Not found", { status: 404 });
+
+  // Lazy-close any expired polls before snapshotting, so the snapshot reflects
+  // current state. Newly-closed polls also fan out to other subscribers.
+  const newlyClosed = await closeExpiredPolls(id);
+  for (const c of newlyClosed) broadcast(id, "poll_closed", c);
 
   const cookieName = `mindforum_pid_${id}`;
   const participantId = req.cookies.get(cookieName)?.value ?? null;
+
+  const [room, reactions, openPolls, recentClosedPolls] = await Promise.all([
+    getRoom(id),
+    getReactionsForRoom(id),
+    getOpenPollsForRoom(id, participantId ?? ""),
+    getClosedPollsForRoom(id, 10),
+  ]);
+  if (!room) return new Response("Not found", { status: 404 });
 
   const stream = new TransformStream<Uint8Array, Uint8Array>();
   const writer = stream.writable.getWriter();
   const encoder = new TextEncoder();
 
   writer.write(
-    encoder.encode(`event: snapshot\ndata: ${JSON.stringify(snapshot(room, reactions))}\n\n`)
+    encoder.encode(
+      `event: snapshot\ndata: ${JSON.stringify(
+        snapshot(room, reactions, openPolls, recentClosedPolls),
+      )}\n\n`,
+    ),
   );
 
   subscribe(id, writer);

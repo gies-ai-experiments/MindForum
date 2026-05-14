@@ -1,6 +1,17 @@
 // Minimal in-memory IP rate limiter. Survives HMR via globalThis stash.
 // Buckets are sliding 1-minute windows; each endpoint picks its own limit.
 // Not distributed (one process), which matches the rest of the app's scope.
+//
+// Known buckets:
+//   create-room       5  / 10min
+//   join              10 /  1min
+//   message           60 /  1min
+//   upload            10 / 10min
+//   brief             3  /  5min
+//   poll-draft        5  /  5min
+//   poll-create       5  / 10min
+//   poll-vote         30 /  1min
+//   poll-close        10 /  1min
 
 type Hit = { ts: number; n: number };
 

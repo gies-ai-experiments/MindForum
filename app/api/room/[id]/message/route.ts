@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   appendMessage,
-  getParticipant,
+  closeExpiredPolls,
   getRecentMessages,
   getSelectedFiles,
   updateMessageContent,
@@ -12,6 +12,8 @@ import { broadcast } from "@/lib/sse";
 import { chatReplyStream } from "@/lib/openai";
 import { checkRate, clientIp, rateLimited } from "@/lib/ratelimit";
 import { assertActiveRoom, httpErrorResponse } from "@/lib/creator-auth";
+import { requireRoomParticipant } from "@/lib/auth-helpers";
+import { roomIsClosed } from "@/lib/room-state";
 import { nanoid } from "nanoid";
 
 export const runtime = "nodejs";
@@ -28,10 +30,25 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   } catch (err) {
     return httpErrorResponse(err);
   }
+  if (await roomIsClosed(id)) {
+    return NextResponse.json({ error: "room_closed" }, { status: 410 });
+  }
 
-  const pid = req.cookies.get(`mindforum_pid_${id}`)?.value;
-  const participant = pid ? await getParticipant(id, pid) : null;
-  if (!participant) return NextResponse.json({ error: "not_joined" }, { status: 401 });
+  const auth = await requireRoomParticipant(req, id);
+  if (!auth.ok) return auth.response;
+  const participant = auth.participant;
+
+  // Shadow-mute: muted participants get a fake-success response so their own
+  // UI shows the message (optimistic), but the row never enters the DB and
+  // nobody else is broadcast to.
+  if (participant.mutedAt != null) {
+    return NextResponse.json({ ok: true, id: nanoid(10) });
+  }
+
+  // Lazy-close any expired polls so a post-expiry message also acts as a
+  // close trigger for clients with stale tabs.
+  const newlyClosed = await closeExpiredPolls(id);
+  for (const c of newlyClosed) broadcast(id, "poll_closed", c);
 
   const body = await req.json().catch(() => ({}));
   const content = typeof body.content === "string" ? body.content.trim() : "";

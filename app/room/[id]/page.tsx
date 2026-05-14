@@ -16,6 +16,8 @@ import {
   savePrefs,
   showToast,
 } from "@/lib/notify";
+import { PollLaunchModal } from "./PollLaunchModal";
+import { PollCard } from "./PollCard";
 
 type Participant = { id: string; name: string; email: string; joinedAt: number };
 type PublicFile = {
@@ -50,6 +52,40 @@ type Msg = {
   reactions?: Reaction[];
   editedAt?: number | null;
 };
+type PollOptionView = { id: string; pollId: string; position: number; text: string };
+type OpenPoll = {
+  id: string;
+  roomId: string;
+  authorId: string;
+  authorName: string;
+  question: string;
+  status: "open";
+  createdAt: number;
+  closesAt: number | null;
+  closedAt: number | null;
+  closedBy: string | null;
+  options: PollOptionView[];
+  totalVotes: number;
+  myVoteOptionId: string | null;
+};
+type ClosedPoll = {
+  id: string;
+  roomId: string;
+  authorId: string;
+  authorName: string;
+  question: string;
+  status: "closed";
+  createdAt: number;
+  closesAt: number | null;
+  closedAt: number | null;
+  closedBy: string | null;
+  options: PollOptionView[];
+  totalVotes: number;
+  tallies: { optionId: string; text: string; votes: number }[];
+  winnerOptionId: string | null;
+  inconclusive: boolean;
+};
+
 type Snapshot = {
   id: string;
   name: string;
@@ -59,6 +95,8 @@ type Snapshot = {
   messages: Msg[];
   files: PublicFile[];
   selectedFileIds: string[];
+  openPolls?: OpenPoll[];
+  recentClosedPolls?: ClosedPoll[];
 };
 
 export default function RoomPage(props: { params: Promise<{ id: string }> }) {
@@ -83,6 +121,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
   const [catchupOpen, setCatchupOpen] = useState(false);
   const [catchupData, setCatchupData] = useState<CatchupData | null>(null);
   const [catchupLoading, setCatchupLoading] = useState(false);
+  const [showPollModal, setShowPollModal] = useState(false);
 
   const [participantId, setParticipantId] = useState<string>("");
   const [prefs, setPrefs] = useState<NotifyPrefs>(DEFAULT_PREFS);
@@ -402,6 +441,64 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
       const { selectedFileIds } = JSON.parse((ev as MessageEvent).data);
       setState((s) => (s ? { ...s, selectedFileIds } : s));
     });
+    es.addEventListener("poll_opened", (ev) => {
+      const data = JSON.parse((ev as MessageEvent).data) as {
+        pollId: string;
+        roomId: string;
+        question: string;
+        options: PollOptionView[];
+        closesAt: number | null;
+        authorId: string;
+        authorName: string;
+        createdAt: number;
+      };
+      const fresh: OpenPoll = {
+        id: data.pollId,
+        roomId: data.roomId,
+        authorId: data.authorId,
+        authorName: data.authorName,
+        question: data.question,
+        status: "open",
+        createdAt: data.createdAt,
+        closesAt: data.closesAt,
+        closedAt: null,
+        closedBy: null,
+        options: data.options,
+        totalVotes: 0,
+        myVoteOptionId: null,
+      };
+      setState((s) =>
+        s ? { ...s, openPolls: [...(s.openPolls ?? []), fresh] } : s,
+      );
+    });
+    es.addEventListener("poll_vote", (ev) => {
+      const { pollId, totalVotes } = JSON.parse((ev as MessageEvent).data) as {
+        pollId: string;
+        totalVotes: number;
+      };
+      setState((s) =>
+        s
+          ? {
+              ...s,
+              openPolls: (s.openPolls ?? []).map((p) =>
+                p.id === pollId ? { ...p, totalVotes } : p,
+              ),
+            }
+          : s,
+      );
+    });
+    es.addEventListener("poll_closed", (ev) => {
+      const closed = JSON.parse((ev as MessageEvent).data) as ClosedPoll;
+      setState((s) =>
+        s
+          ? {
+              ...s,
+              openPolls: (s.openPolls ?? []).filter((p) => p.id !== closed.id),
+              recentClosedPolls: [...(s.recentClosedPolls ?? []), closed],
+            }
+          : s,
+      );
+    });
     es.onerror = () => {
       /* EventSource auto-reconnects */
     };
@@ -485,6 +582,12 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
   async function submitDraft() {
     const content = draft.trim();
     if (!content) return;
+    // Intercept /poll to open the launch modal instead of posting a chat message.
+    if (content === "/poll" || content.startsWith("/poll ")) {
+      setDraft("");
+      setShowPollModal(true);
+      return;
+    }
     setDraft("");
     await fetch(`/api/room/${id}/message`, {
       method: "POST",
@@ -731,6 +834,13 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
         minHeight: 0,
       }}
     >
+      {showPollModal && (
+        <PollLaunchModal
+          roomId={id}
+          onClose={() => setShowPollModal(false)}
+          onLaunched={() => setShowPollModal(false)}
+        />
+      )}
       {catchupOpen && (
         <div
           role="dialog"
@@ -986,15 +1096,43 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
                 Mention <code>@ai</code> to ask a question, or click <b>Generate project brief</b> when the room has enough context.
               </p>
             )}
-            {state.messages.map((m) => (
-              <MsgView
-                key={m.id}
-                m={m}
-                roomId={id}
-                viewerId={participantId}
-                onQuote={quoteReply}
-              />
-            ))}
+            {(() => {
+              type StreamItem =
+                | { kind: "msg"; at: number; data: Msg }
+                | { kind: "poll"; at: number; data: OpenPoll | ClosedPoll };
+              const items: StreamItem[] = [
+                ...state.messages.map((m) => ({ kind: "msg" as const, at: m.createdAt, data: m })),
+                ...(state.openPolls ?? []).map((p) => ({
+                  kind: "poll" as const,
+                  at: p.createdAt,
+                  data: p,
+                })),
+                ...(state.recentClosedPolls ?? []).map((p) => ({
+                  kind: "poll" as const,
+                  at: p.createdAt,
+                  data: p,
+                })),
+              ];
+              items.sort((a, b) => a.at - b.at);
+              return items.map((it) =>
+                it.kind === "msg" ? (
+                  <MsgView
+                    key={it.data.id}
+                    m={it.data}
+                    roomId={id}
+                    viewerId={participantId}
+                    onQuote={quoteReply}
+                  />
+                ) : (
+                  <PollCard
+                    key={it.data.id}
+                    poll={it.data}
+                    currentParticipantId={participantId}
+                    isAdmin={false}
+                  />
+                ),
+              );
+            })()}
             {briefPending && (
               <div style={{ color: "var(--muted)", fontStyle: "italic", padding: "8px 0" }}>
                 Generating brief…
@@ -1016,6 +1154,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
             </div>
           ) : (() => {
             const aiMention = /^\s*@ai\b/i.test(draft);
+            const pollCommand = /^\/poll(\s|$)/.test(draft);
             const pills = detectMentionPills(draft, state.participants, participantId);
             return (
               <form
@@ -1075,8 +1214,16 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
                         ...inp(),
                         width: "100%",
                         display: "block",
-                        borderColor: aiMention ? "var(--orange)" : "var(--border)",
-                        boxShadow: aiMention ? "0 0 0 3px rgba(232,74,39,0.15)" : "none",
+                        borderColor: aiMention
+                          ? "var(--orange)"
+                          : pollCommand
+                            ? "var(--navy)"
+                            : "var(--border)",
+                        boxShadow: aiMention
+                          ? "0 0 0 3px rgba(232,74,39,0.15)"
+                          : pollCommand
+                            ? "0 0 0 3px rgba(19,41,75,0.15)"
+                            : "none",
                         outline: "none",
                         transition: "border-color 120ms, box-shadow 120ms",
                         background: "transparent",
@@ -2028,10 +2175,24 @@ function MentionPill({ pill }: { pill: Pill }) {
 // so glyph widths stay aligned with the underlying transparent <input>.
 function renderInputMentions(text: string): React.ReactNode[] {
   const parts: React.ReactNode[] = [];
-  const regex = /@[\w-]+/g;
-  let last = 0;
-  let match: RegExpExecArray | null;
+  let cursor = 0;
   let i = 0;
+
+  // Leading /poll command — recognized only at the very start, same rule as the intercept.
+  const pollMatch = text.match(/^\/poll(?=\s|$)/);
+  if (pollMatch) {
+    parts.push(
+      <span key={`im-${i++}`} style={{ color: "var(--navy)", fontWeight: 600 }}>
+        {pollMatch[0]}
+      </span>,
+    );
+    cursor = pollMatch[0].length;
+  }
+
+  const regex = /@[\w-]+/g;
+  regex.lastIndex = cursor;
+  let last = cursor;
+  let match: RegExpExecArray | null;
   while ((match = regex.exec(text)) !== null) {
     if (match.index > last) parts.push(text.slice(last, match.index));
     const isAi = /^@ai$/i.test(match[0]);
@@ -2079,12 +2240,22 @@ function renderWithMentions(text: string): React.ReactNode[] {
   return parts;
 }
 
+type BriefDecisionData = {
+  question: string;
+  closedAt: string;
+  winnerText: string | null;
+  tallies: { option: string; votes: number }[];
+  totalVotes: number;
+  inconclusive: boolean;
+};
+
 type BriefData = {
   themes?: string[];
   outline?: { section: string; points: string[] }[];
   risks?: string[];
   nextSteps?: string[];
   suggestedCollaborators?: string[];
+  decisions?: BriefDecisionData[];
 };
 
 function briefToMarkdown(brief: BriefData, createdAt: number): string {
@@ -2107,6 +2278,22 @@ function briefToMarkdown(brief: BriefData, createdAt: number): string {
     lines.push(`## Risks`, ``);
     for (const r of brief.risks) lines.push(`- ${r}`);
     lines.push(``);
+  }
+  if (brief.decisions?.length) {
+    lines.push(`## Decisions & Votes`, ``);
+    for (const d of brief.decisions) {
+      const date = new Date(d.closedAt).toISOString().slice(0, 10);
+      const inc = d.inconclusive ? ` (inconclusive)` : ``;
+      lines.push(`### ${d.question}`, ``);
+      lines.push(`_Closed ${date} · ${d.totalVotes} ${d.totalVotes === 1 ? "vote" : "votes"}${inc}_`, ``);
+      for (const t of d.tallies) {
+        const isWinner = t.option === d.winnerText;
+        const label = isWinner ? `**${t.option}**` : t.option;
+        const suffix = isWinner ? ` (winner)` : ``;
+        lines.push(`- ${label} — ${t.votes} ${t.votes === 1 ? "vote" : "votes"}${suffix}`);
+      }
+      lines.push(``);
+    }
   }
   if (brief.nextSteps?.length) {
     lines.push(`## Next steps`, ``);
@@ -2204,6 +2391,32 @@ function BriefView({ m }: { m: Msg }) {
         </div>
       )}
       <Section title="Risks" items={brief?.risks} />
+      {brief?.decisions && brief.decisions.length > 0 && (
+        <div style={{ margin: "12px 0" }}>
+          <div style={sectionTitle()}>Decisions & Votes</div>
+          {brief.decisions.map((d, i) => (
+            <div key={i} style={{ marginTop: 8 }}>
+              <div style={{ fontWeight: 600 }}>{d.question}</div>
+              <div style={{ fontSize: 12, color: "var(--muted)" }}>
+                Closed {new Date(d.closedAt).toLocaleDateString()} · {d.totalVotes}{" "}
+                {d.totalVotes === 1 ? "vote" : "votes"}
+                {d.inconclusive && <span> (inconclusive)</span>}
+              </div>
+              <ul style={{ margin: "4px 0 0 18px" }}>
+                {d.tallies.map((t, j) => {
+                  const isWinner = t.option === d.winnerText;
+                  return (
+                    <li key={j} style={isWinner ? { fontWeight: 600 } : undefined}>
+                      {t.option} — {t.votes} {t.votes === 1 ? "vote" : "votes"}
+                      {isWinner && " (winner)"}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
       <Section title="Next steps" items={brief?.nextSteps} />
       <Section title="Suggested collaborators" items={brief?.suggestedCollaborators} />
     </div>

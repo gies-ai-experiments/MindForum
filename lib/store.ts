@@ -12,6 +12,7 @@ import { nanoid } from "nanoid";
 import type { PoolClient } from "pg";
 import { pool, query, tx } from "./db";
 import type { SortKey, Direction } from "./admin-sort";
+import { computeTallies, type OptionRow, type VoteRow } from "./poll-logic";
 
 export type Participant = {
   id: string;
@@ -19,6 +20,8 @@ export type Participant = {
   email: string;
   joinedAt: number;
   lastSeenAt: number | null;
+  mutedAt: number | null;
+  removedAt: number | null;
 };
 
 export type ReactionSummary = {
@@ -34,7 +37,7 @@ export type Message = {
   authorName: string;
   content: string;
   createdAt: number;
-  kind?: "chat" | "brief";
+  kind?: "chat" | "brief" | "system";
   reactions?: ReactionSummary[];
   editedAt?: number | null;
 };
@@ -59,6 +62,7 @@ export type Room = {
   ownerId: string;
   archivedAt: number | null;
   systemPrompt: string;
+  closedAt: number | null;
   participants: Participant[];
   messages: Message[];
   files: RoomFile[];
@@ -72,6 +76,48 @@ export type RoomMeta = {
   archivedAt: number | null;
 };
 
+export type Poll = {
+  id: string;
+  roomId: string;
+  authorId: string;
+  authorName: string;
+  question: string;
+  status: "open" | "closed";
+  createdAt: number;
+  closesAt: number | null;
+  closedAt: number | null;
+  closedBy: string | null;
+  options: PollOption[];
+};
+
+export type PollOption = {
+  id: string;
+  pollId: string;
+  position: number;
+  text: string;
+};
+
+export type PollVote = {
+  pollId: string;
+  participantId: string;
+  optionId: string;
+  castAt: number;
+};
+
+export type OpenPollView = Omit<Poll, "status"> & {
+  status: "open";
+  totalVotes: number;
+  myVoteOptionId: string | null;
+};
+
+export type ClosedPollView = Omit<Poll, "status"> & {
+  status: "closed";
+  totalVotes: number;
+  tallies: { optionId: string; text: string; votes: number }[];
+  winnerOptionId: string | null;
+  inconclusive: boolean;
+};
+
 // -------- Row → domain mappers
 
 function toParticipant(r: {
@@ -80,6 +126,8 @@ function toParticipant(r: {
   email: string;
   joined_at: Date;
   last_seen_at: Date | null;
+  muted_at: Date | null;
+  removed_at: Date | null;
 }): Participant {
   return {
     id: r.id,
@@ -87,6 +135,8 @@ function toParticipant(r: {
     email: r.email,
     joinedAt: r.joined_at.getTime(),
     lastSeenAt: r.last_seen_at ? r.last_seen_at.getTime() : null,
+    mutedAt: r.muted_at ? r.muted_at.getTime() : null,
+    removedAt: r.removed_at ? r.removed_at.getTime() : null,
   };
 }
 
@@ -171,6 +221,7 @@ export async function createRoom(
     ownerId: r.owner_id,
     archivedAt: r.archived_at ? r.archived_at.getTime() : null,
     createdAt: r.created_at.getTime(),
+    closedAt: null,
     participants: [],
     messages: [],
     files: [],
@@ -241,6 +292,7 @@ export async function createRoomBySlug(input: {
         createdById: r.created_by_id,
         ownerId: r.owner_id,
         archivedAt: r.archived_at ? r.archived_at.getTime() : null,
+        closedAt: null,
         createdAt: r.created_at.getTime(),
         participants: [],
         messages: [],
@@ -262,8 +314,9 @@ export async function getRoom(id: string): Promise<Room | null> {
       owner_id: string;
       archived_at: Date | null;
       created_at: Date;
+      closed_at: Date | null;
     }>(
-      `SELECT id, name, system_prompt, created_by_id, owner_id, archived_at, created_at
+      `SELECT id, name, system_prompt, created_by_id, owner_id, archived_at, created_at, closed_at
        FROM rooms WHERE id = $1`,
       [id]
     );
@@ -277,8 +330,10 @@ export async function getRoom(id: string): Promise<Room | null> {
         email: string;
         joined_at: Date;
         last_seen_at: Date | null;
+        muted_at: Date | null;
+        removed_at: Date | null;
       }>(
-        `SELECT id, name, email, joined_at, last_seen_at FROM participants
+        `SELECT id, name, email, joined_at, last_seen_at, muted_at, removed_at FROM participants
          WHERE room_id = $1 ORDER BY joined_at ASC`,
         [id]
       ),
@@ -324,6 +379,7 @@ export async function getRoom(id: string): Promise<Room | null> {
       ownerId: r.owner_id,
       archivedAt: r.archived_at ? r.archived_at.getTime() : null,
       createdAt: r.created_at.getTime(),
+      closedAt: r.closed_at ? r.closed_at.getTime() : null,
       participants: participantsQ.rows.map(toParticipant),
       messages: messagesQ.rows.map(toMessage),
       files: filesQ.rows.map(toRoomFile),
@@ -385,8 +441,10 @@ export async function upsertParticipant(
       email: string;
       joined_at: Date;
       last_seen_at: Date | null;
+      muted_at: Date | null;
+      removed_at: Date | null;
     }>(
-      `SELECT id, name, email, joined_at, last_seen_at FROM participants
+      `SELECT id, name, email, joined_at, last_seen_at, muted_at, removed_at FROM participants
        WHERE room_id = $1 AND lower(email) = lower($2)`,
       [roomId, email]
     );
@@ -401,10 +459,12 @@ export async function upsertParticipant(
       email: string;
       joined_at: Date;
       last_seen_at: Date | null;
+      muted_at: Date | null;
+      removed_at: Date | null;
     }>(
       `INSERT INTO participants (id, room_id, name, email)
        VALUES ($1, $2, $3, $4)
-       RETURNING id, name, email, joined_at, last_seen_at`,
+       RETURNING id, name, email, joined_at, last_seen_at, muted_at, removed_at`,
       [id, roomId, name, email]
     );
     return toParticipant(rows[0]);
@@ -421,8 +481,10 @@ export async function getParticipant(
     email: string;
     joined_at: Date;
     last_seen_at: Date | null;
+    muted_at: Date | null;
+    removed_at: Date | null;
   }>(
-    `SELECT id, name, email, joined_at, last_seen_at FROM participants
+    `SELECT id, name, email, joined_at, last_seen_at, muted_at, removed_at FROM participants
      WHERE room_id = $1 AND id = $2`,
     [roomId, participantId]
   );
@@ -883,7 +945,9 @@ export async function getRecentChatMessages(
  */
 export function snapshot(
   room: Room,
-  reactionsByMsg?: Map<string, ReactionSummary[]>
+  reactionsByMsg?: Map<string, ReactionSummary[]>,
+  openPolls: OpenPollView[] = [],
+  recentClosedPolls: ClosedPollView[] = [],
 ) {
   return {
     id: room.id,
@@ -896,7 +960,118 @@ export function snapshot(
       : room.messages,
     files: room.files.map(({ extractedText: _drop, selected: _sel, ...rest }) => rest),
     selectedFileIds: room.files.filter((f) => f.selected).map((f) => f.id),
+    openPolls,
+    recentClosedPolls,
   };
+}
+
+// -------- Admin facilitator mutators (close/reopen room, mute/remove participant)
+
+/** Lock a room: no more writes (messages, polls, uploads, briefs) until reopened.
+ *  Idempotent — re-closing keeps the original timestamp via COALESCE. */
+export async function closeRoom(roomId: string): Promise<void> {
+  await query(
+    `UPDATE rooms SET closed_at = COALESCE(closed_at, NOW()) WHERE id = $1`,
+    [roomId],
+  );
+}
+
+/** Unlock a previously closed room. No-op if already open. */
+export async function reopenRoom(roomId: string): Promise<void> {
+  await query(`UPDATE rooms SET closed_at = NULL WHERE id = $1`, [roomId]);
+}
+
+/** Shadow-mute (true) or unmute (false) a participant. Idempotent via COALESCE. */
+export async function setParticipantMuted(
+  roomId: string,
+  participantId: string,
+  muted: boolean,
+): Promise<void> {
+  await query(
+    muted
+      ? `UPDATE participants SET muted_at = COALESCE(muted_at, NOW())
+           WHERE room_id = $1 AND id = $2`
+      : `UPDATE participants SET muted_at = NULL
+           WHERE room_id = $1 AND id = $2`,
+    [roomId, participantId],
+  );
+}
+
+/** Mark a participant as removed (per-session kick).
+ *  They can rejoin via email upsert; this just invalidates the current cookie path.
+ *  Idempotent via COALESCE — second remove keeps the original timestamp. */
+export async function setParticipantRemoved(
+  roomId: string,
+  participantId: string,
+): Promise<void> {
+  await query(
+    `UPDATE participants
+        SET removed_at = COALESCE(removed_at, NOW())
+      WHERE room_id = $1 AND id = $2`,
+    [roomId, participantId],
+  );
+}
+
+/** Rename a room. Caller validates length. */
+export async function renameRoom(roomId: string, name: string): Promise<void> {
+  await query(`UPDATE rooms SET name = $2 WHERE id = $1`, [roomId, name]);
+}
+
+/** Replace the room's system prompt wholesale. Caller validates length. */
+export async function setSystemPrompt(
+  roomId: string,
+  systemPrompt: string,
+): Promise<void> {
+  await query(`UPDATE rooms SET system_prompt = $2 WHERE id = $1`, [
+    roomId,
+    systemPrompt,
+  ]);
+}
+
+/** Post a facilitator announcement as a kind:"system" message.
+ *  Admin bypass: this does NOT check closed_at, so admins can announce on
+ *  closed rooms (e.g. "Session ended, thanks for joining"). */
+export async function postSystemAnnouncement(
+  roomId: string,
+  content: string,
+): Promise<Message> {
+  const msg: Message = {
+    id: nanoid(10),
+    roomId,
+    authorId: "facilitator",
+    authorName: "Facilitator",
+    content: content.slice(0, 4000),
+    createdAt: Date.now(),
+    kind: "system",
+  };
+  await appendMessage(msg);
+  return msg;
+}
+
+/** Per-room participant listing for the admin dashboard.
+ *  Ordered by recency (last_seen_at DESC NULLS LAST, then name ASC).
+ *  Excludes removed participants by default; pass includeRemoved to see them. */
+export async function listParticipantsForAdmin(
+  roomId: string,
+  opts: { includeRemoved?: boolean } = {},
+): Promise<Participant[]> {
+  const filter = opts.includeRemoved ? "" : "AND removed_at IS NULL";
+  const { rows } = await query<{
+    id: string;
+    name: string;
+    email: string;
+    joined_at: Date;
+    last_seen_at: Date | null;
+    muted_at: Date | null;
+    removed_at: Date | null;
+  }>(
+    `SELECT id, name, email, joined_at, last_seen_at, muted_at, removed_at
+       FROM participants
+      WHERE room_id = $1 ${filter}
+      ORDER BY last_seen_at DESC NULLS LAST, name ASC`,
+    [roomId],
+  );
+  return rows.map(toParticipant);
 }
 
 // -------- Admin helpers (used by /api/admin/seed)
@@ -963,6 +1138,7 @@ export type RoomActivityRow = {
   lastMessageAt: Date | null;
   totalParticipants: number;
   fileCount: number;
+  closedAt: Date | null;
 };
 
 export type ArchivedFilter = "true" | "false" | "all";
@@ -998,6 +1174,7 @@ export async function adminListRoomsWithActivity(opts: {
       r.archived_at,
       r.owner_id,
       c.display_name AS owner_display_name,
+      r.closed_at,
       COUNT(m.id) FILTER (WHERE m.created_at > NOW() - INTERVAL '24 hours') AS msgs_24h,
       COUNT(m.id) FILTER (WHERE m.created_at > NOW() - INTERVAL '7 days')   AS msgs_7d,
       COUNT(DISTINCT m.author_id) FILTER (WHERE m.created_at > NOW() - INTERVAL '7 days' AND m.author_id != 'ai') AS participants_7d,
@@ -1020,6 +1197,7 @@ export async function adminListRoomsWithActivity(opts: {
     archived_at: Date | null;
     owner_id: string;
     owner_display_name: string | null;
+    closed_at: Date | null;
     msgs_24h: string;
     msgs_7d: string;
     participants_7d: string;
@@ -1034,6 +1212,7 @@ export async function adminListRoomsWithActivity(opts: {
     archivedAt: r.archived_at,
     ownerId: r.owner_id,
     ownerDisplayName: r.owner_display_name,
+    closedAt: r.closed_at,
     msgs24h: Number(r.msgs_24h),
     msgs7d: Number(r.msgs_7d),
     participants7d: Number(r.participants_7d),
@@ -1426,8 +1605,10 @@ export async function removeParticipant(
       email: string;
       joined_at: Date;
       last_seen_at: Date | null;
+      muted_at: Date | null;
+      removed_at: Date | null;
     }>(
-      `SELECT id, name, email, joined_at, last_seen_at FROM participants
+      `SELECT id, name, email, joined_at, last_seen_at, muted_at, removed_at FROM participants
         WHERE room_id = $1 AND id = $2`,
       [roomId, participantId]
     );
@@ -1439,4 +1620,260 @@ export async function removeParticipant(
     );
     return snap;
   });
+}
+
+// -------- Polls
+
+function newPollId(): string { return `pl_${nanoid(10)}`; }
+function newOptionId(): string { return `po_${nanoid(10)}`; }
+
+type PollRow = {
+  id: string;
+  room_id: string;
+  author_id: string;
+  question: string;
+  status: string;
+  created_at: Date;
+  closes_at: Date | null;
+  closed_at: Date | null;
+  closed_by: string | null;
+};
+
+type OptionDbRow = {
+  id: string;
+  poll_id: string;
+  position: number;
+  text: string;
+};
+
+function toPollOption(r: OptionDbRow): PollOption {
+  return { id: r.id, pollId: r.poll_id, position: r.position, text: r.text };
+}
+
+function toPoll(row: PollRow, authorName: string, options: PollOption[]): Poll {
+  return {
+    id: row.id,
+    roomId: row.room_id,
+    authorId: row.author_id,
+    authorName,
+    question: row.question,
+    status: row.status as "open" | "closed",
+    createdAt: row.created_at.getTime(),
+    closesAt: row.closes_at ? row.closes_at.getTime() : null,
+    closedAt: row.closed_at ? row.closed_at.getTime() : null,
+    closedBy: row.closed_by,
+    options,
+  };
+}
+
+export async function createPoll(input: {
+  roomId: string;
+  authorId: string;
+  question: string;
+  options: string[]; // pre-validated
+  closesAt: Date | null;
+}): Promise<Poll> {
+  const id = newPollId();
+  return tx(async (client) => {
+    const pollRes = await client.query<PollRow>(
+      `INSERT INTO polls (id, room_id, author_id, question, status, closes_at)
+       VALUES ($1, $2, $3, $4, 'open', $5)
+       RETURNING id, room_id, author_id, question, status, created_at,
+                 closes_at, closed_at, closed_by`,
+      [id, input.roomId, input.authorId, input.question, input.closesAt],
+    );
+    const pollRow = pollRes.rows[0];
+    const optionRows: OptionDbRow[] = [];
+    for (let i = 0; i < input.options.length; i++) {
+      const oRes = await client.query<OptionDbRow>(
+        `INSERT INTO poll_options (id, poll_id, position, text)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id, poll_id, position, text`,
+        [newOptionId(), id, i, input.options[i]],
+      );
+      optionRows.push(oRes.rows[0]);
+    }
+    const authorRes = await client.query<{ name: string }>(
+      `SELECT name FROM participants WHERE id = $1 AND room_id = $2`,
+      [input.authorId, input.roomId],
+    );
+    const authorName = authorRes.rows[0]?.name ?? "(unknown)";
+    return toPoll(pollRow, authorName, optionRows.map(toPollOption));
+  });
+}
+
+export async function getPoll(id: string): Promise<Poll | null> {
+  const { rows } = await query<PollRow & { author_name: string | null }>(
+    `SELECT p.id, p.room_id, p.author_id, p.question, p.status, p.created_at,
+            p.closes_at, p.closed_at, p.closed_by,
+            pt.name AS author_name
+     FROM polls p
+     LEFT JOIN participants pt ON pt.id = p.author_id AND pt.room_id = p.room_id
+     WHERE p.id = $1`,
+    [id],
+  );
+  if (rows.length === 0) return null;
+  const r = rows[0];
+  const optsRes = await query<OptionDbRow>(
+    `SELECT id, poll_id, position, text FROM poll_options
+     WHERE poll_id = $1 ORDER BY position`,
+    [id],
+  );
+  return toPoll(r, r.author_name ?? "(unknown)", optsRes.rows.map(toPollOption));
+}
+
+export async function getOpenPollsForRoom(
+  roomId: string,
+  requesterId: string,
+): Promise<OpenPollView[]> {
+  const { rows: polls } = await query<PollRow & { author_name: string | null }>(
+    `SELECT p.id, p.room_id, p.author_id, p.question, p.status, p.created_at,
+            p.closes_at, p.closed_at, p.closed_by,
+            pt.name AS author_name
+     FROM polls p
+     LEFT JOIN participants pt ON pt.id = p.author_id AND pt.room_id = p.room_id
+     WHERE p.room_id = $1 AND p.status = 'open'
+     ORDER BY p.created_at ASC`,
+    [roomId],
+  );
+  const views: OpenPollView[] = [];
+  for (const p of polls) {
+    const optsRes = await query<OptionDbRow>(
+      `SELECT id, poll_id, position, text FROM poll_options
+       WHERE poll_id = $1 ORDER BY position`,
+      [p.id],
+    );
+    const countRes = await query<{ n: string }>(
+      `SELECT COUNT(*)::text AS n FROM poll_votes WHERE poll_id = $1`,
+      [p.id],
+    );
+    const totalVotes = parseInt(countRes.rows[0]?.n ?? "0", 10);
+    const myRes = await query<{ option_id: string }>(
+      `SELECT option_id FROM poll_votes
+       WHERE poll_id = $1 AND participant_id = $2`,
+      [p.id, requesterId],
+    );
+    const base = toPoll(p, p.author_name ?? "(unknown)", optsRes.rows.map(toPollOption));
+    views.push({
+      ...base,
+      status: "open",
+      totalVotes,
+      myVoteOptionId: myRes.rows[0]?.option_id ?? null,
+    });
+  }
+  return views;
+}
+
+export async function getClosedPollsForRoom(
+  roomId: string,
+  limit = 50,
+): Promise<ClosedPollView[]> {
+  const { rows: polls } = await query<PollRow & { author_name: string | null }>(
+    `SELECT p.id, p.room_id, p.author_id, p.question, p.status, p.created_at,
+            p.closes_at, p.closed_at, p.closed_by,
+            pt.name AS author_name
+     FROM polls p
+     LEFT JOIN participants pt ON pt.id = p.author_id AND pt.room_id = p.room_id
+     WHERE p.room_id = $1 AND p.status = 'closed'
+     ORDER BY p.closed_at DESC
+     LIMIT $2`,
+    [roomId, limit],
+  );
+  const views: ClosedPollView[] = [];
+  for (const p of polls) {
+    const optsRes = await query<OptionDbRow>(
+      `SELECT id, poll_id, position, text FROM poll_options
+       WHERE poll_id = $1 ORDER BY position`,
+      [p.id],
+    );
+    const votesRes = await query<{ option_id: string }>(
+      `SELECT option_id FROM poll_votes WHERE poll_id = $1`,
+      [p.id],
+    );
+    const tally = computeTallies(
+      optsRes.rows.map((o): OptionRow => ({ id: o.id, position: o.position, text: o.text })),
+      votesRes.rows.map((v): VoteRow => ({ optionId: v.option_id })),
+    );
+    const base = toPoll(p, p.author_name ?? "(unknown)", optsRes.rows.map(toPollOption));
+    views.push({
+      ...base,
+      status: "closed",
+      totalVotes: tally.totalVotes,
+      tallies: tally.tallies,
+      winnerOptionId: tally.winnerOptionId,
+      inconclusive: tally.inconclusive,
+    });
+  }
+  return views.reverse();
+}
+
+export async function castVote(input: {
+  pollId: string;
+  participantId: string;
+  optionId: string;
+}): Promise<{ totalVotes: number }> {
+  return tx(async (client) => {
+    const openCheck = await client.query<{ ok: number }>(
+      `SELECT 1 AS ok FROM polls
+       WHERE id = $1 AND status = 'open'
+         AND (closes_at IS NULL OR closes_at > NOW())`,
+      [input.pollId],
+    );
+    if (openCheck.rowCount === 0) throw new Error("poll_not_open");
+    const optCheck = await client.query<{ ok: number }>(
+      `SELECT 1 AS ok FROM poll_options WHERE id = $1 AND poll_id = $2`,
+      [input.optionId, input.pollId],
+    );
+    if (optCheck.rowCount === 0) throw new Error("invalid_option");
+    await client.query(
+      `INSERT INTO poll_votes (poll_id, participant_id, option_id, cast_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (poll_id, participant_id)
+       DO UPDATE SET option_id = EXCLUDED.option_id, cast_at = NOW()`,
+      [input.pollId, input.participantId, input.optionId],
+    );
+    const countRes = await client.query<{ n: string }>(
+      `SELECT COUNT(*)::text AS n FROM poll_votes WHERE poll_id = $1`,
+      [input.pollId],
+    );
+    return { totalVotes: parseInt(countRes.rows[0]?.n ?? "0", 10) };
+  });
+}
+
+export async function closePoll(input: {
+  pollId: string;
+  closedBy: string;
+}): Promise<ClosedPollView | null> {
+  const { rows } = await query<{ room_id: string }>(
+    `UPDATE polls
+     SET status='closed', closed_at=NOW(), closed_by=$2
+     WHERE id=$1 AND status='open'
+     RETURNING room_id`,
+    [input.pollId, input.closedBy],
+  );
+  if (rows.length === 0) return null;
+  const closed = await getClosedPollsForRoom(rows[0].room_id, 100);
+  return closed.find(p => p.id === input.pollId) ?? null;
+}
+
+/**
+ * Lazy expiry: closes all polls in a room whose closes_at has passed.
+ * Returns ClosedPollView for each newly-closed poll. Idempotent —
+ * the WHERE status='open' guard prevents double-close.
+ */
+export async function closeExpiredPolls(roomId: string): Promise<ClosedPollView[]> {
+  const { rows } = await query<{ id: string }>(
+    `UPDATE polls
+     SET status='closed', closed_at=NOW(), closed_by='auto'
+     WHERE room_id=$1
+       AND status='open'
+       AND closes_at IS NOT NULL
+       AND closes_at <= NOW()
+     RETURNING id`,
+    [roomId],
+  );
+  if (rows.length === 0) return [];
+  const closed = await getClosedPollsForRoom(roomId, 100);
+  const closedIds = new Set(rows.map(r => r.id));
+  return closed.filter(p => closedIds.has(p.id));
 }

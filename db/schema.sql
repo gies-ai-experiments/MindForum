@@ -176,3 +176,50 @@ CREATE INDEX IF NOT EXISTS audit_log_room_idx  ON audit_log (room_id, at DESC);
 
 INSERT INTO schema_migrations (version) VALUES (8)
   ON CONFLICT (version) DO NOTHING;
+
+-- v9: polls — single-choice voting with hidden tallies until close.
+-- One row per vote (UPSERT on conflict = change vote, no history).
+-- Lazy expiry: status='open' is canonically open iff closes_at IS NULL OR closes_at > NOW().
+CREATE TABLE IF NOT EXISTS polls (
+  id           TEXT PRIMARY KEY,
+  room_id      TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+  author_id    TEXT NOT NULL,
+  question     TEXT NOT NULL,
+  status       TEXT NOT NULL CHECK (status IN ('open','closed')),
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  closes_at    TIMESTAMPTZ,
+  closed_at    TIMESTAMPTZ,
+  closed_by    TEXT
+);
+
+CREATE INDEX IF NOT EXISTS polls_room_status_idx
+  ON polls (room_id, status);
+
+CREATE TABLE IF NOT EXISTS poll_options (
+  id        TEXT PRIMARY KEY,
+  poll_id   TEXT NOT NULL REFERENCES polls(id) ON DELETE CASCADE,
+  position  INTEGER NOT NULL,
+  text      TEXT NOT NULL,
+  UNIQUE (poll_id, position)
+);
+
+CREATE TABLE IF NOT EXISTS poll_votes (
+  poll_id        TEXT NOT NULL REFERENCES polls(id) ON DELETE CASCADE,
+  participant_id TEXT NOT NULL,
+  option_id      TEXT NOT NULL REFERENCES poll_options(id),
+  cast_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (poll_id, participant_id)
+);
+
+INSERT INTO schema_migrations (version) VALUES (9)
+  ON CONFLICT (version) DO NOTHING;
+
+-- v10: admin facilitator state — close a session, mute / remove participants.
+-- All three columns nullable; non-NULL means the state is active.
+-- (Originally numbered v7 on the polls branch before rebase onto creator-rooms-v1.)
+ALTER TABLE rooms        ADD COLUMN IF NOT EXISTS closed_at  TIMESTAMPTZ;
+ALTER TABLE participants ADD COLUMN IF NOT EXISTS muted_at   TIMESTAMPTZ;
+ALTER TABLE participants ADD COLUMN IF NOT EXISTS removed_at TIMESTAMPTZ;
+
+INSERT INTO schema_migrations (version) VALUES (10)
+  ON CONFLICT (version) DO NOTHING;
