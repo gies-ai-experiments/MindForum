@@ -214,11 +214,12 @@ CREATE TABLE IF NOT EXISTS poll_votes (
 INSERT INTO schema_migrations (version) VALUES (9)
   ON CONFLICT (version) DO NOTHING;
 
--- v7: admin facilitator state — close a session, mute / remove participants.
+-- v10: admin facilitator state — close a session, mute / remove participants.
 -- All three columns nullable; non-NULL means the state is active.
+-- (Originally numbered v7 on the polls branch before rebase onto creator-rooms-v1.)
 ALTER TABLE rooms        ADD COLUMN IF NOT EXISTS closed_at  TIMESTAMPTZ;
 ALTER TABLE participants ADD COLUMN IF NOT EXISTS muted_at   TIMESTAMPTZ;
 ALTER TABLE participants ADD COLUMN IF NOT EXISTS removed_at TIMESTAMPTZ;
 
-INSERT INTO schema_migrations (version) VALUES (7)
+INSERT INTO schema_migrations (version) VALUES (10)
   ON CONFLICT (version) DO NOTHING;

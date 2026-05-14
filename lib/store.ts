@@ -292,6 +292,7 @@ export async function createRoomBySlug(input: {
         createdById: r.created_by_id,
         ownerId: r.owner_id,
         archivedAt: r.archived_at ? r.archived_at.getTime() : null,
+        closedAt: null,
         createdAt: r.created_at.getTime(),
         participants: [],
         messages: [],
@@ -1604,8 +1605,10 @@ export async function removeParticipant(
       email: string;
       joined_at: Date;
       last_seen_at: Date | null;
+      muted_at: Date | null;
+      removed_at: Date | null;
     }>(
-      `SELECT id, name, email, joined_at, last_seen_at FROM participants
+      `SELECT id, name, email, joined_at, last_seen_at, muted_at, removed_at FROM participants
         WHERE room_id = $1 AND id = $2`,
       [roomId, participantId]
     );
@@ -1617,6 +1620,8 @@ export async function removeParticipant(
     );
     return snap;
   });
+}
+
 // -------- Polls
 
 function newPollId(): string { return `pl_${nanoid(10)}`; }
