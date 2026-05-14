@@ -52,6 +52,12 @@ function PollCardOpen({
 }) {
   const [remaining, setRemaining] = useState(() => secondsUntil(poll.closesAt));
   const [voting, setVoting] = useState(false);
+  // Optimistic local selection — the SSE poll_vote event only carries
+  // {pollId, totalVotes}, so without this the controlled radio wouldn't
+  // light up until a snapshot refresh.
+  const [mySelectedOptionId, setMySelectedOptionId] = useState<string | null>(
+    poll.myVoteOptionId,
+  );
   const canClose = poll.authorId === currentParticipantId || isAdmin;
 
   useEffect(() => {
@@ -61,16 +67,27 @@ function PollCardOpen({
     return () => clearInterval(t);
   }, [poll.closesAt]);
 
+  useEffect(() => {
+    setMySelectedOptionId(poll.myVoteOptionId);
+  }, [poll.myVoteOptionId]);
+
   async function vote(optionId: string) {
     if (voting) return;
+    const previous = mySelectedOptionId;
+    setMySelectedOptionId(optionId);
     setVoting(true);
     try {
-      await fetch(`/api/room/${poll.roomId}/poll/${poll.id}/vote`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ optionId }),
-      });
-      // SSE poll_vote event will fold the new totalVotes into state upstream.
+      const res = await fetch(
+        `/api/room/${poll.roomId}/poll/${poll.id}/vote`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ optionId }),
+        },
+      );
+      if (!res.ok) setMySelectedOptionId(previous);
+    } catch {
+      setMySelectedOptionId(previous);
     } finally {
       setVoting(false);
     }
@@ -92,23 +109,31 @@ function PollCardOpen({
       </div>
       <div className="poll-question">{poll.question}</div>
       <ul className="poll-options">
-        {poll.options.map(o => (
-          <li key={o.id}>
-            <label className="poll-option-label">
-              <input
-                type="radio"
-                name={`poll-${poll.id}`}
-                checked={poll.myVoteOptionId === o.id}
-                onChange={() => void vote(o.id)}
-                disabled={voting}
-              />
-              <span>{o.text}</span>
-              {poll.myVoteOptionId === o.id && (
-                <span className="poll-your-vote"> ← your vote</span>
-              )}
-            </label>
-          </li>
-        ))}
+        {poll.options.map(o => {
+          const selected = mySelectedOptionId === o.id;
+          return (
+            <li key={o.id}>
+              <label
+                className={
+                  "poll-option-label" +
+                  (selected ? " poll-option-label--selected" : "")
+                }
+              >
+                <input
+                  type="radio"
+                  name={`poll-${poll.id}`}
+                  checked={selected}
+                  onChange={() => void vote(o.id)}
+                  disabled={voting}
+                />
+                <span>{o.text}</span>
+                {selected && (
+                  <span className="poll-your-vote"> ← your vote</span>
+                )}
+              </label>
+            </li>
+          );
+        })}
       </ul>
       <div className="poll-card-footer">
         <span className="poll-meta">
