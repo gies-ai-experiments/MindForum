@@ -1154,6 +1154,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
             </div>
           ) : (() => {
             const aiMention = /^\s*@ai\b/i.test(draft);
+            const pollCommand = /^\/poll(\s|$)/.test(draft);
             const pills = detectMentionPills(draft, state.participants, participantId);
             return (
               <form
@@ -1213,8 +1214,16 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
                         ...inp(),
                         width: "100%",
                         display: "block",
-                        borderColor: aiMention ? "var(--orange)" : "var(--border)",
-                        boxShadow: aiMention ? "0 0 0 3px rgba(232,74,39,0.15)" : "none",
+                        borderColor: aiMention
+                          ? "var(--orange)"
+                          : pollCommand
+                            ? "var(--navy)"
+                            : "var(--border)",
+                        boxShadow: aiMention
+                          ? "0 0 0 3px rgba(232,74,39,0.15)"
+                          : pollCommand
+                            ? "0 0 0 3px rgba(19,41,75,0.15)"
+                            : "none",
                         outline: "none",
                         transition: "border-color 120ms, box-shadow 120ms",
                         background: "transparent",
@@ -2166,10 +2175,24 @@ function MentionPill({ pill }: { pill: Pill }) {
 // so glyph widths stay aligned with the underlying transparent <input>.
 function renderInputMentions(text: string): React.ReactNode[] {
   const parts: React.ReactNode[] = [];
-  const regex = /@[\w-]+/g;
-  let last = 0;
-  let match: RegExpExecArray | null;
+  let cursor = 0;
   let i = 0;
+
+  // Leading /poll command — recognized only at the very start, same rule as the intercept.
+  const pollMatch = text.match(/^\/poll(?=\s|$)/);
+  if (pollMatch) {
+    parts.push(
+      <span key={`im-${i++}`} style={{ color: "var(--navy)", fontWeight: 600 }}>
+        {pollMatch[0]}
+      </span>,
+    );
+    cursor = pollMatch[0].length;
+  }
+
+  const regex = /@[\w-]+/g;
+  regex.lastIndex = cursor;
+  let last = cursor;
+  let match: RegExpExecArray | null;
   while ((match = regex.exec(text)) !== null) {
     if (match.index > last) parts.push(text.slice(last, match.index));
     const isAi = /^@ai$/i.test(match[0]);

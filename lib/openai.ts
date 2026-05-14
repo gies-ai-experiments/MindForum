@@ -177,7 +177,9 @@ const POLL_DRAFT_SYSTEM = `You help a MindForum room run a quick vote. Read the 
 
 export async function draftPollFromHistory(
   recentMessages: Message[],
+  systemPrompt = "",
 ): Promise<PollDraft> {
+  const system = `${POLL_DRAFT_SYSTEM}${roomGuidanceBlock(systemPrompt)}`;
   const res = await client().chat.completions.create({
     model: MODEL_BRIEF,
     response_format: {
@@ -202,7 +204,7 @@ export async function draftPollFromHistory(
       },
     },
     messages: [
-      { role: "system", content: POLL_DRAFT_SYSTEM },
+      { role: "system", content: system },
       ...historyBlock(recentMessages),
     ],
   });
