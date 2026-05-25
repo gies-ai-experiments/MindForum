@@ -30,6 +30,8 @@ export type AuditAction =
   | "room.hard_delete"
   | "room.transfer"
   | "participant.kick"
+  | "participant.mute"
+  | "participant.remove"
   | "file.upload"
   | "file.delete"
   | "file.toggle_selected";

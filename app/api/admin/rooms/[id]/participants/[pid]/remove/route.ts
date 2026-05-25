@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAdmin } from "@/lib/admin-auth";
+import { getActor } from "@/lib/creator-auth";
 import { setParticipantRemoved, roomExists } from "@/lib/store";
 import { broadcast } from "@/lib/sse";
+import { logAudit } from "@/lib/audit";
 
 export const runtime = "nodejs";
 
@@ -19,5 +21,16 @@ export async function POST(
   await setParticipantRemoved(id, pid);
   broadcast(id, "participant_removed", { participantId: pid });
   console.info({ adminAction: "remove", roomId: id, pid, at: new Date().toISOString() });
+
+  const actor = await getActor();
+  if (actor) {
+    await logAudit({
+      actor,
+      action: "participant.remove",
+      roomId: id,
+      metadata: { participantId: pid },
+    });
+  }
+
   return NextResponse.json({ ok: true });
 }
