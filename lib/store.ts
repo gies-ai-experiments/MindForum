@@ -1268,21 +1268,30 @@ export async function transferRoom(
 }
 
 /**
- * Snapshot + cascade delete in one transaction. The audit caller logs the
- * returned snapshot *after* the delete returns so the metadata reflects the
- * row that just disappeared. Returns null if the room didn't exist.
+ * Hard-delete a room. ONLY deletes archived rooms — the conditional DELETE
+ * (`archived_at IS NOT NULL`) is the single, atomic authority on the
+ * archived-only rule, so there is no check-then-act race.
  *
  * Cascade hits messages, message_reactions, participants, room_files via the
  * existing ON DELETE CASCADE on `rooms.id`. Audit log rows survive (no FK on
  * `audit_log.room_id` is intentional — see schema v8 comment).
+ *
+ * Returns a discriminated result:
+ *  - { ok: false, reason: "not_found" }    — no such room
+ *  - { ok: false, reason: "not_archived" } — room exists but is active
+ *  - { ok: true, ... }                     — room deleted
  */
-export async function hardDeleteRoom(id: string): Promise<{
-  slug: string;
-  name: string;
-  ownerId: string;
-  messageCount: number;
-  fileCount: number;
-} | null> {
+export async function hardDeleteRoom(id: string): Promise<
+  | {
+      ok: true;
+      slug: string;
+      name: string;
+      ownerId: string;
+      messageCount: number;
+      fileCount: number;
+    }
+  | { ok: false; reason: "not_found" | "not_archived" }
+> {
   return tx(async (client) => {
     const meta = await client.query<{
       id: string;
@@ -1300,13 +1309,19 @@ export async function hardDeleteRoom(id: string): Promise<{
        FROM rooms r WHERE r.id = $1`,
       [id]
     );
-    if (meta.rowCount === 0) return null;
+    if (meta.rowCount === 0) return { ok: false, reason: "not_found" };
     const m = meta.rows[0];
 
-    const del = await client.query(`DELETE FROM rooms WHERE id = $1`, [id]);
-    if ((del.rowCount ?? 0) === 0) return null;
+    // Conditional delete IS the archived-only enforcement: an active room
+    // matches 0 rows. Evaluated at delete time inside the transaction.
+    const del = await client.query(
+      `DELETE FROM rooms WHERE id = $1 AND archived_at IS NOT NULL`,
+      [id]
+    );
+    if ((del.rowCount ?? 0) === 0) return { ok: false, reason: "not_archived" };
 
     return {
+      ok: true,
       slug: m.id,
       name: m.name,
       ownerId: m.owner_id,

@@ -88,11 +88,11 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 }
 
 /**
- * DELETE: super-admin hard-delete. Cascades to messages / participants /
- * files / reactions via FK ON DELETE CASCADE on rooms.id. Audit row is
- * written *after* the delete returns so the snapshot metadata reflects the
- * row that just disappeared (the audit_log table has no FK on room_id by
- * design — entries survive hard-delete).
+ * DELETE: super-admin hard-delete. Refused on active rooms (`409
+ * not_archived`) — a room must be archived first; archive is the recoverable
+ * staging step. The archived-only rule is enforced atomically inside
+ * `hardDeleteRoom` (see lib/store.ts). Audit row is written after the delete
+ * returns so the snapshot metadata reflects the row that just disappeared.
  *
  * Creator path is NOT supported here. Creators archive; only super-admin
  * destroys.
@@ -103,8 +103,18 @@ export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: str
   }
   try {
     const { id } = await ctx.params;
-    const snap = await hardDeleteRoom(id);
-    if (!snap) return NextResponse.json({ error: "not_found" }, { status: 404 });
+    const result = await hardDeleteRoom(id);
+    if (!result.ok) {
+      const status = result.reason === "not_found" ? 404 : 409;
+      return NextResponse.json({ error: result.reason }, { status });
+    }
+    const snap = {
+      slug: result.slug,
+      name: result.name,
+      ownerId: result.ownerId,
+      messageCount: result.messageCount,
+      fileCount: result.fileCount,
+    };
     const actor = await getActor();
     if (actor) {
       await logAudit({

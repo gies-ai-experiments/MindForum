@@ -4,6 +4,7 @@ import { adminListRoomsWithActivity } from "@/lib/store";
 import { resolveSort, type SortKey } from "@/lib/admin-sort";
 import TokenForm from "./TokenForm";
 import CopyLinkButton from "./CopyLinkButton";
+import RoomActions from "./RoomActions";
 
 export const dynamic = "force-dynamic";
 
@@ -149,6 +150,7 @@ export default async function AdminRoomsPage({
               <th style={{ padding: 8, textAlign: "right" }}>{sortLink(sort, "file_count", q, "Files")}</th>
               <th style={{ padding: 8 }}>{sortLink(sort, "created_at", q, "Created")}</th>
               <th style={{ padding: 8 }}>Link</th>
+              <th style={{ padding: 8 }}>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -209,6 +211,9 @@ export default async function AdminRoomsPage({
                   <td style={{ padding: 8, textAlign: "right" }}>{r.fileCount}</td>
                   <td style={{ padding: 8 }}>{ymd(r.createdAt)}</td>
                   <td style={{ padding: 8 }}><CopyLinkButton url={url} /></td>
+                  <td style={{ padding: 8 }}>
+                    <RoomActions roomId={r.id} archived={r.archivedAt !== null} />
+                  </td>
                 </tr>
               );
             })}
