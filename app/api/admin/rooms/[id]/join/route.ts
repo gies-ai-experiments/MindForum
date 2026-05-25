@@ -32,6 +32,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   const res = NextResponse.redirect(url, 303);
   res.cookies.set(`mindforum_pid_${id}`, participant.id, {
     httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
   });
