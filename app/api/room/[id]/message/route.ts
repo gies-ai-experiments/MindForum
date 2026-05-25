@@ -40,8 +40,22 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
   // Shadow-mute: muted participants get a fake-success response so their own
   // UI shows the message (optimistic), but the row never enters the DB and
-  // nobody else is broadcast to.
+  // nobody else is broadcast to. We DO log the attempt server-side so the
+  // facilitator has a record of what the muted user tried to say — not
+  // persisted to the DB (would defeat the shadow-mute design), just stderr.
   if (participant.mutedAt != null) {
+    const mutedBody = await req.json().catch(() => ({}));
+    const attempted =
+      typeof mutedBody.content === "string" ? mutedBody.content.trim().slice(0, 4000) : "";
+    console.info({
+      adminAction: "shadow_mute_suppress",
+      roomId: id,
+      pid: participant.id,
+      name: participant.name,
+      contentLength: attempted.length,
+      contentPreview: attempted.slice(0, 200),
+      at: new Date().toISOString(),
+    });
     return NextResponse.json({ ok: true, id: nanoid(10) });
   }
 
