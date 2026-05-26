@@ -137,7 +137,8 @@ function PollCardOpen({
       </ul>
       <div className="poll-card-footer">
         <span className="poll-meta">
-          {poll.totalVotes} {poll.totalVotes === 1 ? "vote" : "votes"} · results hidden until close
+          <span key={poll.totalVotes} className="vote-pop">{poll.totalVotes}</span>{" "}
+          {poll.totalVotes === 1 ? "vote" : "votes"} · results hidden until close
         </span>
         {canClose && (
           <button onClick={() => void closeNow()} className="poll-close-btn">
@@ -177,7 +178,9 @@ function PollCardClosed({
               className="poll-tally-bar"
               style={{ width: `${(t.votes / maxVotes) * 100}%` }}
             />
-            <span className="poll-tally-count">{t.votes}</span>
+            <span className="poll-tally-count">
+              <span key={t.votes} className="vote-pop">{t.votes}</span>
+            </span>
           </li>
         ))}
       </ul>

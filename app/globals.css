@@ -159,6 +159,17 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: 
 .poll-tallies li.winner .poll-tally-bar { background: var(--orange); }
 .poll-tally-count { text-align: right; color: var(--muted); font-size: 13px; }
 
+@keyframes vote-pop {
+  0%   { transform: scale(1);    color: var(--orange); }
+  40%  { transform: scale(1.25); color: var(--orange); }
+  100% { transform: scale(1);    color: inherit; }
+}
+.vote-pop {
+  display: inline-block;
+  animation: vote-pop 280ms ease-out;
+  transform-origin: center;
+}
+
 @media (max-width: 640px) {
   .modal--poll {
     max-width: 100%;
