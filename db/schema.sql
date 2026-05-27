@@ -223,3 +223,15 @@ ALTER TABLE participants ADD COLUMN IF NOT EXISTS removed_at TIMESTAMPTZ;
 
 INSERT INTO schema_migrations (version) VALUES (10)
   ON CONFLICT (version) DO NOTHING;
+
+-- v11: external context sources attach as room_files rows.
+ALTER TABLE room_files
+  ADD COLUMN IF NOT EXISTS source_type TEXT NOT NULL DEFAULT 'upload'
+    CHECK (source_type IN ('upload', 'github', 'url'));
+ALTER TABLE room_files
+  ADD COLUMN IF NOT EXISTS source_url TEXT;
+ALTER TABLE room_files
+  ADD COLUMN IF NOT EXISTS source_meta JSONB;
+
+INSERT INTO schema_migrations (version) VALUES (11)
+  ON CONFLICT (version) DO NOTHING;

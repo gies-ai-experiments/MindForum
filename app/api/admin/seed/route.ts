@@ -126,6 +126,9 @@ export async function POST(req: NextRequest) {
         uploadedAt: Date.now(),
         extractedText: parsed.text.slice(0, MAX_TEXT_CHARS),
         selected: sf.selected !== false,
+        sourceType: "upload",
+        sourceUrl: null,
+        sourceMeta: null,
       };
       await adminAddFile(rf);
       loaded.push({ name: fileName, path: sf.path, bytes: buf.length });

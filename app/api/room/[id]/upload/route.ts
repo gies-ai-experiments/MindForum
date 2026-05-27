@@ -58,6 +58,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     uploadedAt: Date.now(),
     extractedText: parsed.text.slice(0, MAX_TEXT_CHARS),
     selected: true,
+    sourceType: "upload",
+    sourceUrl: null,
+    sourceMeta: null,
   };
 
   try {

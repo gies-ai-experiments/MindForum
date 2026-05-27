@@ -13,6 +13,7 @@ import type { PoolClient } from "pg";
 import { pool, query, tx } from "./db";
 import type { SortKey, Direction } from "./admin-sort";
 import { computeTallies, type OptionRow, type VoteRow } from "./poll-logic";
+import type { SourceMeta, SourceType } from "./context-sources";
 
 export type Participant = {
   id: string;
@@ -52,6 +53,9 @@ export type RoomFile = {
   uploadedAt: number;
   extractedText: string;
   selected: boolean;
+  sourceType: SourceType;
+  sourceUrl: string | null;
+  sourceMeta: SourceMeta;
 };
 
 export type Room = {
@@ -162,7 +166,7 @@ function toMessage(r: {
   };
 }
 
-function toRoomFile(r: {
+type RoomFileRow = {
   id: string;
   room_id: string;
   name: string;
@@ -172,7 +176,12 @@ function toRoomFile(r: {
   extracted_text: string;
   selected: boolean;
   uploaded_at: Date;
-}): RoomFile {
+  source_type: SourceType;
+  source_url: string | null;
+  source_meta: SourceMeta;
+};
+
+function toRoomFile(r: RoomFileRow): RoomFile {
   return {
     id: r.id,
     roomId: r.room_id,
@@ -183,6 +192,9 @@ function toRoomFile(r: {
     uploadedAt: r.uploaded_at.getTime(),
     extractedText: r.extracted_text,
     selected: r.selected,
+    sourceType: r.source_type,
+    sourceUrl: r.source_url,
+    sourceMeta: r.source_meta,
   };
 }
 
@@ -352,19 +364,9 @@ export async function getRoom(id: string): Promise<Room | null> {
          ORDER BY created_at ASC, id ASC`,
         [id]
       ),
-      client.query<{
-        id: string;
-        room_id: string;
-        name: string;
-        mime: string;
-        size_bytes: number;
-        uploaded_by_id: string;
-        extracted_text: string;
-        selected: boolean;
-        uploaded_at: Date;
-      }>(
+      client.query<RoomFileRow>(
         `SELECT id, room_id, name, mime, size_bytes, uploaded_by_id,
-                extracted_text, selected, uploaded_at
+                extracted_text, selected, uploaded_at, source_type, source_url, source_meta
          FROM room_files WHERE room_id = $1
          ORDER BY uploaded_at ASC`,
         [id]
@@ -565,8 +567,8 @@ export async function editMessage(
 export async function addFile(file: RoomFile): Promise<void> {
   await query(
     `INSERT INTO room_files
-       (id, room_id, name, mime, size_bytes, uploaded_by_id, extracted_text, selected, uploaded_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, to_timestamp($9 / 1000.0))`,
+       (id, room_id, name, mime, size_bytes, uploaded_by_id, extracted_text, selected, uploaded_at, source_type, source_url, source_meta)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, to_timestamp($9 / 1000.0), $10, $11, $12)`,
     [
       file.id,
       file.roomId,
@@ -577,6 +579,9 @@ export async function addFile(file: RoomFile): Promise<void> {
       file.extractedText,
       file.selected,
       file.uploadedAt,
+      file.sourceType,
+      file.sourceUrl,
+      file.sourceMeta,
     ]
   );
 }
@@ -596,19 +601,9 @@ export async function setFileSelected(
 
 /** Fetch only the selected files' extracted text — for AI prompt assembly. */
 export async function getSelectedFiles(roomId: string): Promise<RoomFile[]> {
-  const { rows } = await query<{
-    id: string;
-    room_id: string;
-    name: string;
-    mime: string;
-    size_bytes: number;
-    uploaded_by_id: string;
-    extracted_text: string;
-    selected: boolean;
-    uploaded_at: Date;
-  }>(
+  const { rows } = await query<RoomFileRow>(
     `SELECT id, room_id, name, mime, size_bytes, uploaded_by_id,
-            extracted_text, selected, uploaded_at
+            extracted_text, selected, uploaded_at, source_type, source_url, source_meta
      FROM room_files
      WHERE room_id = $1 AND selected = TRUE
      ORDER BY uploaded_at ASC`,
@@ -1104,14 +1099,17 @@ export async function adminAddFile(file: RoomFile): Promise<void> {
   // Admin seeds use deterministic ids; use ON CONFLICT to re-seed safely.
   await query(
     `INSERT INTO room_files
-       (id, room_id, name, mime, size_bytes, uploaded_by_id, extracted_text, selected)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       (id, room_id, name, mime, size_bytes, uploaded_by_id, extracted_text, selected, source_type, source_url, source_meta)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      ON CONFLICT (id) DO UPDATE SET
        name = EXCLUDED.name,
        mime = EXCLUDED.mime,
        size_bytes = EXCLUDED.size_bytes,
        extracted_text = EXCLUDED.extracted_text,
-       selected = EXCLUDED.selected`,
+       selected = EXCLUDED.selected,
+       source_type = EXCLUDED.source_type,
+       source_url = EXCLUDED.source_url,
+       source_meta = EXCLUDED.source_meta`,
     [
       file.id,
       file.roomId,
@@ -1121,6 +1119,9 @@ export async function adminAddFile(file: RoomFile): Promise<void> {
       file.uploadedById,
       file.extractedText,
       file.selected,
+      file.sourceType,
+      file.sourceUrl,
+      file.sourceMeta,
     ]
   );
 }
@@ -1576,19 +1577,9 @@ export async function getRoomFileById(
   roomId: string,
   fileId: string
 ): Promise<RoomFile | null> {
-  const { rows } = await query<{
-    id: string;
-    room_id: string;
-    name: string;
-    mime: string;
-    size_bytes: number;
-    uploaded_by_id: string;
-    extracted_text: string;
-    selected: boolean;
-    uploaded_at: Date;
-  }>(
+  const { rows } = await query<RoomFileRow>(
     `SELECT id, room_id, name, mime, size_bytes, uploaded_by_id,
-            extracted_text, selected, uploaded_at
+            extracted_text, selected, uploaded_at, source_type, source_url, source_meta
        FROM room_files WHERE room_id = $1 AND id = $2`,
     [roomId, fileId]
   );
