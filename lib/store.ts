@@ -13,7 +13,7 @@ import type { PoolClient } from "pg";
 import { pool, query, tx } from "./db";
 import type { SortKey, Direction } from "./admin-sort";
 import { computeTallies, type OptionRow, type VoteRow } from "./poll-logic";
-import type { SourceMeta, SourceType } from "./context-sources";
+import { isSourceType, validateSourceMeta, type SourceMeta, type SourceType } from "./context-sources";
 
 export type Participant = {
   id: string;
@@ -176,7 +176,7 @@ type RoomFileRow = {
   extracted_text: string;
   selected: boolean;
   uploaded_at: Date;
-  source_type: SourceType;
+  source_type: SourceType | null;
   source_url: string | null;
   source_meta: SourceMeta;
 };
@@ -192,9 +192,9 @@ function toRoomFile(r: RoomFileRow): RoomFile {
     uploadedAt: r.uploaded_at.getTime(),
     extractedText: r.extracted_text,
     selected: r.selected,
-    sourceType: r.source_type,
+    sourceType: isSourceType(r.source_type) ? r.source_type : "uploaded",
     sourceUrl: r.source_url,
-    sourceMeta: r.source_meta,
+    sourceMeta: validateSourceMeta(isSourceType(r.source_type) ? r.source_type : "uploaded", r.source_meta),
   };
 }
 

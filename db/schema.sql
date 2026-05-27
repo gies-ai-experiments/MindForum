@@ -226,8 +226,8 @@ INSERT INTO schema_migrations (version) VALUES (10)
 
 -- v11: external context sources attach as room_files rows.
 ALTER TABLE room_files
-  ADD COLUMN IF NOT EXISTS source_type TEXT NOT NULL DEFAULT 'upload'
-    CHECK (source_type IN ('upload', 'github', 'url'));
+  ADD COLUMN IF NOT EXISTS source_type TEXT NOT NULL DEFAULT 'uploaded'
+    CHECK (source_type IN ('uploaded', 'github_repo', 'web_url'));
 ALTER TABLE room_files
   ADD COLUMN IF NOT EXISTS source_url TEXT;
 ALTER TABLE room_files

@@ -126,7 +126,7 @@ export async function POST(req: NextRequest) {
         uploadedAt: Date.now(),
         extractedText: parsed.text.slice(0, MAX_TEXT_CHARS),
         selected: sf.selected !== false,
-        sourceType: "upload",
+        sourceType: "uploaded",
         sourceUrl: null,
         sourceMeta: null,
       };

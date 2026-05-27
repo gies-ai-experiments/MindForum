@@ -6,7 +6,7 @@
 //   create-room       5  / 10min
 //   join              10 /  1min
 //   message           60 /  1min
-//   upload            10 / 10min
+//   attach            10 / 10min (upload + GitHub context + URL context)
 //   brief             3  /  5min
 //   poll-draft        5  /  5min
 //   poll-create       5  / 10min

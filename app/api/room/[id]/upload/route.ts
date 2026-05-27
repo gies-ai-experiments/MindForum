@@ -1,21 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { addFile, type RoomFile } from "@/lib/store";
-import { broadcast } from "@/lib/sse";
 import { parseFile } from "@/lib/parse";
 import { checkRate, clientIp, rateLimited } from "@/lib/ratelimit";
 import { assertActiveRoom, httpErrorResponse } from "@/lib/creator-auth";
-import { logAudit } from "@/lib/audit";
 import { requireRoomParticipant } from "@/lib/auth-helpers";
 import { roomIsClosed } from "@/lib/room-state";
-import { nanoid } from "nanoid";
+import { attachRoomFile } from "@/lib/attach-room-file";
+import { ATTACH_RATE, MAX_CONTEXT_CHARS } from "@/lib/context-sources";
 
 export const runtime = "nodejs";
 
 const MAX_BYTES = 10 * 1024 * 1024;
-const MAX_TEXT_CHARS = 200_000;
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const rate = checkRate("upload", clientIp(req), 10, 10 * 60 * 1000);
+  const rate = checkRate(ATTACH_RATE.bucket, clientIp(req), ATTACH_RATE.limit, ATTACH_RATE.windowMs);
   if (!rate.allowed) return rateLimited(rate.retryAfterSeconds);
 
   const { id } = await ctx.params;
@@ -48,56 +45,21 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     );
   }
 
-  const rf: RoomFile = {
-    id: nanoid(10),
-    roomId: id,
-    name: file.name,
-    mime: parsed.mime,
-    sizeBytes: file.size,
-    uploadedById: participant.id,
-    uploadedAt: Date.now(),
-    extractedText: parsed.text.slice(0, MAX_TEXT_CHARS),
-    selected: true,
-    sourceType: "upload",
-    sourceUrl: null,
-    sourceMeta: null,
-  };
-
   try {
-    await addFile(rf);
+    const publicFile = await attachRoomFile({
+      roomId: id,
+      participant,
+      name: file.name,
+      mime: parsed.mime,
+      sizeBytes: file.size,
+      extractedText: parsed.text.slice(0, MAX_CONTEXT_CHARS),
+      sourceType: "uploaded",
+      sourceUrl: null,
+      sourceMeta: null,
+    });
+    return NextResponse.json({ ok: true, file: publicFile });
   } catch (err) {
-    console.error("addFile failed:", err);
+    console.error("attach uploaded file failed:", err);
     return NextResponse.json({ error: "db_error" }, { status: 500 });
   }
-
-  const { extractedText: _drop, selected: _sel, ...publicFile } = rf;
-  // Participant-scoped audit row. Actor namespace is participant id, not
-  // creator id — listings can disambiguate via the action column.
-  await logAudit({
-    actor: { id: participant.id, email: participant.email },
-    action: "file.upload",
-    roomId: id,
-    metadata: {
-      fileId: rf.id,
-      fileName: rf.name,
-      sizeBytes: rf.sizeBytes,
-      mime: rf.mime,
-    },
-  });
-  broadcast(id, "file_added", publicFile);
-  // Fresh selection list = everything currently selected. Cheap to rebuild on the fly.
-  broadcast(id, "file_selection_changed", {
-    selectedFileIds: await selectedIds(id),
-  });
-
-  return NextResponse.json({ ok: true, file: publicFile });
-}
-
-async function selectedIds(roomId: string): Promise<string[]> {
-  const { query } = await import("@/lib/db");
-  const { rows } = await query<{ id: string }>(
-    `SELECT id FROM room_files WHERE room_id = $1 AND selected = TRUE ORDER BY uploaded_at ASC`,
-    [roomId]
-  );
-  return rows.map((r) => r.id);
 }
