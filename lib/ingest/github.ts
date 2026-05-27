@@ -154,6 +154,8 @@ export async function ingestGitHubRepo(input: GitHubIngestInput): Promise<GitHub
   const timeout = setTimeout(() => abort.abort(), GITHUB_FETCH_TIMEOUT_MS);
   const tmp = await mkdtemp(path.join(tmpdir(), "mindforum-gh-"));
   const tarPath = path.join(tmp, "repo.tar.gz");
+  let extractedBytes = 0;
+  let extractedFiles = 0;
 
   try {
     const response = await fetchImpl(tarballUrl, {
@@ -169,7 +171,16 @@ export async function ingestGitHubRepo(input: GitHubIngestInput): Promise<GitHub
       strict: true,
       filter: (_filePath, entry) => {
         const entryType = "type" in entry ? entry.type : "";
-        return entryType !== "SymbolicLink" && entryType !== "Link";
+        if (entryType === "SymbolicLink" || entryType === "Link") return false;
+        if (entryType === "File" || entryType === "OldFile" || entryType === "ContiguousFile") {
+          const size = "size" in entry && typeof entry.size === "number" ? entry.size : 0;
+          extractedFiles += 1;
+          extractedBytes += size;
+          if (extractedFiles > GITHUB_MAX_FILES || extractedBytes > GITHUB_MAX_EXPANDED_BYTES) {
+            throw new Error("github_repo_too_large");
+          }
+        }
+        return true;
       },
     });
 

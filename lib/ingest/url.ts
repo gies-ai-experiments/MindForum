@@ -72,7 +72,7 @@ export function normalizeHttpUrl(raw: string): URL {
 }
 
 export function isBlockedIp(address: string): boolean {
-  const value = address.trim().toLowerCase();
+  const value = normalizeIpLiteral(address);
   if (!value) return true;
 
   const mappedIpv4 = value.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/);
@@ -180,15 +180,22 @@ async function fetchWithGuards(
 }
 
 async function validateHost(url: URL, resolveImpl: ResolveImpl): Promise<ResolvedAddress[]> {
-  if (isIP(url.hostname)) {
-    const direct = [{ address: url.hostname, family: isIP(url.hostname) }];
+  const host = normalizeIpLiteral(url.hostname);
+  if (isIP(host)) {
+    const direct = [{ address: host, family: isIP(host) }];
     validateResolvedAddresses(direct);
     return direct;
   }
 
-  const addresses = await resolveImpl(url.hostname, { all: true });
+  const addresses = await resolveImpl(host, { all: true });
   validateResolvedAddresses(addresses);
   return addresses;
+}
+
+function normalizeIpLiteral(address: string): string {
+  const value = address.trim().toLowerCase();
+  if (value.startsWith("[") && value.endsWith("]")) return value.slice(1, -1);
+  return value;
 }
 
 function pinnedDispatcher(addresses: ResolvedAddress[]) {
