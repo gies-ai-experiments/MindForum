@@ -9,6 +9,9 @@ type FileRow = {
   sizeBytes: number;
   uploadedAt: number;
   selected: boolean;
+  sourceType: "uploaded" | "github_repo" | "web_url";
+  sourceUrl: string | null;
+  sourceMeta: Record<string, unknown> | null;
 };
 
 function fmtSize(bytes: number): string {
@@ -115,7 +118,25 @@ export default function FilesPanel({
                   onChange={(e) => toggleSelected(f.id, e.target.checked)}
                 />
               </td>
-              <td style={{ padding: 6, fontSize: 14 }}>{f.name}</td>
+              <td style={{ padding: 6, fontSize: 14, maxWidth: 360 }}>
+                <div>
+                  {f.name} <span style={badgeStyle(f.sourceType)}>{sourceLabel(f.sourceType)}</span>
+                </div>
+                {f.sourceUrl && (
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "#666",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                    title={f.sourceUrl}
+                  >
+                    {f.sourceUrl}
+                  </div>
+                )}
+              </td>
               <td
                 style={{
                   padding: 6,
@@ -154,4 +175,24 @@ export default function FilesPanel({
       </table>
     </div>
   );
+}
+
+function sourceLabel(sourceType: FileRow["sourceType"]): string {
+  if (sourceType === "github_repo") return "github";
+  if (sourceType === "web_url") return "url";
+  return "file";
+}
+
+function badgeStyle(sourceType: FileRow["sourceType"]): React.CSSProperties {
+  const color =
+    sourceType === "github_repo" ? "#334155" : sourceType === "web_url" ? "#075985" : "#6b7280";
+  return {
+    display: "inline-block",
+    marginLeft: 4,
+    padding: "1px 6px",
+    borderRadius: 999,
+    fontSize: 11,
+    color,
+    background: "rgba(15,23,42,0.06)",
+  };
 }

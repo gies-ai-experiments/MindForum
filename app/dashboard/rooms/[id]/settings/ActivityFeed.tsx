@@ -34,8 +34,12 @@ function describe(e: AuditEntry): string {
       return `removed ${md.participantName ?? md.participantEmail ?? "a participant"}`;
     }
     case "file.upload": {
-      const md = m as { fileName?: string; sizeBytes?: number };
-      return `uploaded "${md.fileName ?? "?"}"${
+      const md = m as { fileName?: string; sizeBytes?: number; sourceType?: string };
+      const source =
+        typeof md.sourceType === "string" && md.sourceType !== "uploaded"
+          ? ` (${sourceLabel(md.sourceType)})`
+          : "";
+      return `attached${source} "${md.fileName ?? "?"}"${
         md.sizeBytes ? ` (${(md.sizeBytes / 1024).toFixed(0)} KB)` : ""
       }`;
     }
@@ -53,6 +57,12 @@ function describe(e: AuditEntry): string {
     default:
       return e.action;
   }
+}
+
+function sourceLabel(sourceType: string): string {
+  if (sourceType === "github_repo") return "github";
+  if (sourceType === "web_url") return "url";
+  return sourceType;
 }
 
 function fmtTime(at: number): string {

@@ -52,11 +52,14 @@ export async function GET(
     uploaded_by_id: string;
     uploaded_at: Date;
     extracted_text: string;
+    source_type: "uploaded" | "github_repo" | "web_url";
+    source_url: string | null;
+    source_meta: Record<string, unknown> | null;
     uploader_name: string | null;
     uploader_email: string | null;
   }>(
     `SELECT rf.id, rf.name, rf.mime, rf.size_bytes, rf.uploaded_by_id, rf.uploaded_at,
-            rf.extracted_text,
+            rf.extracted_text, rf.source_type, rf.source_url, rf.source_meta,
             p.name AS uploader_name, p.email AS uploader_email
      FROM room_files rf
      LEFT JOIN participants p
@@ -77,6 +80,9 @@ export async function GET(
     uploaderName: row.uploader_name,
     uploaderEmail: row.uploader_email,
     extractedText: row.extracted_text,
+    sourceType: row.source_type,
+    sourceUrl: row.source_url,
+    sourceMeta: row.source_meta,
   });
 }
 

@@ -20,6 +20,8 @@ import { PollLaunchModal } from "./PollLaunchModal";
 import { PollCard } from "./PollCard";
 
 type Participant = { id: string; name: string; email: string; joinedAt: number };
+type SourceType = "uploaded" | "github_repo" | "web_url";
+type SourceMeta = Record<string, unknown> | null;
 type PublicFile = {
   id: string;
   roomId: string;
@@ -28,14 +30,11 @@ type PublicFile = {
   sizeBytes: number;
   uploadedById: string;
   uploadedAt: number;
+  sourceType: SourceType;
+  sourceUrl: string | null;
+  sourceMeta: SourceMeta;
 };
-type FilePreview = {
-  id: string;
-  name: string;
-  mime: string;
-  sizeBytes: number;
-  uploadedAt: number;
-  uploadedById: string;
+type FilePreview = PublicFile & {
   uploaderName: string | null;
   uploaderEmail: string | null;
   extractedText: string;
@@ -133,6 +132,15 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
   const [previewData, setPreviewData] = useState<FilePreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [attachMenuOpen, setAttachMenuOpen] = useState(false);
+  const [githubModalOpen, setGithubModalOpen] = useState(false);
+  const [urlModalOpen, setUrlModalOpen] = useState(false);
+  const [githubUrl, setGithubUrl] = useState("");
+  const [githubInclude, setGithubInclude] = useState("");
+  const [githubExclude, setGithubExclude] = useState("");
+  const [githubPreview, setGithubPreview] = useState<{ fileCount: number; charCount: number } | null>(null);
+  const [urlSource, setUrlSource] = useState("");
+  const [urlInstruction, setUrlInstruction] = useState("");
   const isNarrow = useIsNarrow(720);
   const [participantsDrawerOpen, setParticipantsDrawerOpen] = useState(false);
   const [filesDrawerOpen, setFilesDrawerOpen] = useState(false);
@@ -616,6 +624,74 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
     }
   }
 
+  async function previewGitHub() {
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/room/${id}/context/github/preview`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url: githubUrl, include: githubInclude, exclude: githubExclude }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(`GitHub preview failed: ${body.error ?? res.status}`);
+        return;
+      }
+      setGithubPreview({
+        fileCount: Number(body.preview?.sourceMeta?.fileCount ?? 0),
+        charCount: Number(body.preview?.sourceMeta?.charCount ?? 0),
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function attachGitHub(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/room/${id}/context/github`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url: githubUrl, include: githubInclude, exclude: githubExclude }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        alert(`GitHub attach failed: ${body.error ?? res.status}`);
+        return;
+      }
+      setGithubModalOpen(false);
+      setGithubUrl("");
+      setGithubInclude("");
+      setGithubExclude("");
+      setGithubPreview(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function attachUrl(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/room/${id}/context/url`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url: urlSource, instruction: urlInstruction }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        alert(`URL attach failed: ${body.error ?? res.status}`);
+        return;
+      }
+      setUrlModalOpen(false);
+      setUrlSource("");
+      setUrlInstruction("");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function toggleFile(fileId: string, selected: boolean) {
     await fetch(`/api/room/${id}/files`, {
       method: "POST",
@@ -752,7 +828,8 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
                     textUnderlineOffset: 3,
                   }}
                 >
-                  {f.name}
+                  <span>{f.name}</span>
+                  <span style={sourceBadgeStyle(f.sourceType)}>{sourceLabel(f.sourceType)}</span>
                 </button>
                 <div
                   style={{
@@ -772,28 +849,60 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
           );
         })}
       </div>
-      <label
-        style={{
-          ...btnSecondary(),
-          textAlign: "center",
-          display: "block",
-          opacity: busy || state.archived ? 0.5 : 1,
-          cursor: state.archived ? "not-allowed" : undefined,
-        }}
-      >
-        {state.archived ? "Upload disabled (archived)" : busy ? "Uploading…" : "+ Upload file"}
-        <input
-          type="file"
-          hidden
-          accept=".pdf,.docx,.txt,.md"
+      <div style={{ position: "relative" }}>
+        <button
+          type="button"
           disabled={busy || state.archived}
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) upload(f);
-            e.target.value = "";
+          onClick={() => setAttachMenuOpen((open) => !open)}
+          style={{
+            ...btnSecondary(),
+            width: "100%",
+            opacity: busy || state.archived ? 0.5 : 1,
+            cursor: state.archived ? "not-allowed" : undefined,
           }}
-        />
-      </label>
+        >
+          {state.archived ? "Attach disabled (archived)" : busy ? "Working…" : "Attach"}
+        </button>
+        {attachMenuOpen && !state.archived && (
+          <div style={attachMenuStyle()}>
+            <label style={attachMenuItemStyle()}>
+              Upload file
+              <input
+                type="file"
+                hidden
+                accept=".pdf,.docx,.txt,.md"
+                disabled={busy}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) upload(f);
+                  e.target.value = "";
+                  setAttachMenuOpen(false);
+                }}
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => {
+                setGithubModalOpen(true);
+                setAttachMenuOpen(false);
+              }}
+              style={attachMenuItemStyle()}
+            >
+              Attach GitHub repo
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setUrlModalOpen(true);
+                setAttachMenuOpen(false);
+              }}
+              style={attachMenuItemStyle()}
+            >
+              Scrape URL
+            </button>
+          </div>
+        )}
+      </div>
       <div>
         <button
           onClick={() => {
@@ -1287,6 +1396,77 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
           onClose={() => setPreviewFileId(null)}
         />
       )}
+      {githubModalOpen && (
+        <ContextModal title="Attach GitHub repo" onClose={() => setGithubModalOpen(false)}>
+          <form onSubmit={attachGitHub} style={{ display: "grid", gap: 10 }}>
+            <input
+              required
+              value={githubUrl}
+              onChange={(e) => {
+                setGithubUrl(e.target.value);
+                setGithubPreview(null);
+              }}
+              placeholder="https://github.com/owner/repo"
+              style={inp()}
+            />
+            <input
+              value={githubInclude}
+              onChange={(e) => setGithubInclude(e.target.value)}
+              placeholder="Include globs, comma-separated"
+              style={inp()}
+            />
+            <input
+              value={githubExclude}
+              onChange={(e) => setGithubExclude(e.target.value)}
+              placeholder="Exclude globs, comma-separated"
+              style={inp()}
+            />
+            {githubPreview && (
+              <p style={{ margin: 0, fontSize: 13, color: "var(--muted)" }}>
+                Preview: {githubPreview.fileCount} files, {githubPreview.charCount.toLocaleString()} characters
+              </p>
+            )}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                disabled={busy || !githubUrl.trim()}
+                onClick={() => void previewGitHub()}
+                style={btnSecondary()}
+              >
+                Preview
+              </button>
+              <button type="submit" disabled={busy || !githubUrl.trim()} style={btnPrimary()}>
+                {busy ? "Attaching…" : "Attach repo"}
+              </button>
+            </div>
+          </form>
+        </ContextModal>
+      )}
+      {urlModalOpen && (
+        <ContextModal title="Scrape URL" onClose={() => setUrlModalOpen(false)}>
+          <form onSubmit={attachUrl} style={{ display: "grid", gap: 10 }}>
+            <input
+              required
+              value={urlSource}
+              onChange={(e) => setUrlSource(e.target.value)}
+              placeholder="https://example.com/report"
+              style={inp()}
+            />
+            <input
+              required
+              value={urlInstruction}
+              onChange={(e) => setUrlInstruction(e.target.value)}
+              placeholder="Just the methodology section"
+              style={inp()}
+            />
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <button type="submit" disabled={busy || !urlSource.trim() || !urlInstruction.trim()} style={btnPrimary()}>
+                {busy ? "Attaching…" : "Attach URL"}
+              </button>
+            </div>
+          </form>
+        </ContextModal>
+      )}
     </main>
   );
 }
@@ -1302,6 +1482,80 @@ function useIsNarrow(breakpoint = 720): boolean {
     return () => mq.removeEventListener("change", onChange);
   }, [breakpoint]);
   return narrow;
+}
+
+function ContextModal({
+  title,
+  children,
+  onClose,
+}: {
+  title: string;
+  children: React.ReactNode;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="context-modal-title"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.45)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 70,
+        padding: 20,
+      }}
+    >
+      <div
+        style={{
+          background: "white",
+          borderRadius: 12,
+          width: "min(520px, 100%)",
+          boxShadow: "0 10px 40px rgba(0,0,0,0.2)",
+          fontFamily: "system-ui, sans-serif",
+          color: "var(--navy)",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            padding: "16px 18px",
+            borderBottom: "1px solid var(--border)",
+          }}
+        >
+          <h2 id="context-modal-title" style={{ margin: 0, fontSize: 17 }}>
+            {title}
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            style={{
+              background: "transparent",
+              border: "none",
+              fontSize: 24,
+              lineHeight: 1,
+              cursor: "pointer",
+              color: "var(--muted)",
+              padding: 0,
+            }}
+          >
+            ×
+          </button>
+        </div>
+        <div style={{ padding: 18 }}>{children}</div>
+      </div>
+    </div>
+  );
 }
 
 function Drawer({
@@ -1462,14 +1716,27 @@ function FilePreviewModal({
               {data?.name ?? (loading ? "Loading…" : "File")}
             </div>
             {data && (
-              <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
-                {Math.max(1, Math.round(data.sizeBytes / 1024))} KB
-                {" · Uploaded by "}
-                {data.uploaderName ?? "Unknown"}
-                {data.uploaderEmail ? ` (${data.uploaderEmail})` : ""}
-                {" · "}
-                {new Date(data.uploadedAt).toLocaleString()}
-              </div>
+              <>
+                <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
+                  {Math.max(1, Math.round(data.sizeBytes / 1024))} KB
+                  {" · Uploaded by "}
+                  {data.uploaderName ?? "Unknown"}
+                  {data.uploaderEmail ? ` (${data.uploaderEmail})` : ""}
+                  {" · "}
+                  {new Date(data.uploadedAt).toLocaleString()}
+                </div>
+                {data.sourceType !== "uploaded" && (
+                  <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
+                    Source: {sourceLabel(data.sourceType)}
+                    {data.sourceUrl ? ` · ${data.sourceUrl}` : ""}
+                  </div>
+                )}
+                {data.sourceType === "web_url" && typeof data.sourceMeta?.instruction === "string" && (
+                  <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
+                    Instruction: {data.sourceMeta.instruction}
+                  </div>
+                )}
+              </>
             )}
           </div>
           <button
@@ -2485,6 +2752,53 @@ function btnSecondary(): React.CSSProperties {
     borderRadius: 8,
     padding: "10px 16px",
     fontWeight: 600,
+  };
+}
+function attachMenuStyle(): React.CSSProperties {
+  return {
+    position: "absolute",
+    bottom: "calc(100% + 4px)",
+    left: 0,
+    right: 0,
+    background: "white",
+    border: "1px solid var(--border)",
+    borderRadius: 8,
+    boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
+    zIndex: 20,
+    overflow: "hidden",
+  };
+}
+function attachMenuItemStyle(): React.CSSProperties {
+  return {
+    display: "block",
+    width: "100%",
+    textAlign: "left",
+    padding: "10px 12px",
+    border: 0,
+    borderBottom: "1px solid var(--border)",
+    background: "white",
+    color: "var(--text)",
+    cursor: "pointer",
+    font: "inherit",
+  };
+}
+function sourceLabel(sourceType: SourceType): string {
+  if (sourceType === "github_repo") return "github";
+  if (sourceType === "web_url") return "url";
+  return "file";
+}
+function sourceBadgeStyle(sourceType: SourceType): React.CSSProperties {
+  const color =
+    sourceType === "github_repo" ? "#334155" : sourceType === "web_url" ? "#075985" : "#6b7280";
+  return {
+    display: "inline-block",
+    marginLeft: 6,
+    padding: "1px 6px",
+    borderRadius: 999,
+    fontSize: 11,
+    color,
+    background: "rgba(15,23,42,0.06)",
+    verticalAlign: "middle",
   };
 }
 function heroBtn(): React.CSSProperties {

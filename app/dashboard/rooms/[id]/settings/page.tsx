@@ -96,6 +96,9 @@ export default async function RoomSettingsPage({
             sizeBytes: f.sizeBytes,
             uploadedAt: f.uploadedAt,
             selected: f.selected,
+            sourceType: f.sourceType,
+            sourceUrl: f.sourceUrl,
+            sourceMeta: f.sourceMeta,
           }))}
           archived={archived}
         />
