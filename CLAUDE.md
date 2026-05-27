@@ -106,6 +106,10 @@ Push to `main` (or run workflow_dispatch) → GitHub Actions SSHes to the VPS an
 
 ## Session Log
 
+### 2026-05-26
+- Completed: Postgres migration prep — `pg_dump` from VPS (custom format, no-owner/no-privileges) → SCPed to `~/Downloads/mindforum_20260526_150338.dump` (401K). No code changes.
+- Next: Create Azure Flexible Server instance, restore dump, update `POSTGRES_URL` on VPS, redeploy.
+
 ### 2026-05-20
 - Completed: Shipped **super-admin archive/delete UI on `/admin/rooms`** (`1e68c71`, pushed to `main`, auto-deploy 1m48s). Full brainstorm → spec → plan → implement flow. New per-row Actions column: Archive on active rooms, Restore + type-to-confirm Delete on archived rooms (delete button disabled until the exact room id is typed). New `app/admin/rooms/RoomActions.tsx` client component mirrors the `CopyLinkButton`/`ArchiveControl` fetch→reload pattern. The archived-only hard-delete rule is enforced **atomically inside `hardDeleteRoom`** (`lib/store.ts`) — Codex round-1 caught a TOCTOU race in the original route-level pre-check, so the internal `DELETE` is now conditional on `archived_at IS NOT NULL` and the function returns a discriminated union; `DELETE /api/room/[id]` maps it to `200`/`404 not_found`/`409 not_archived`. 2 Codex Plan Reviewer rounds (REJECT→APPROVE: also fixed wrong audit-log column `created_at`→`at`, and the manual walk now uses `?archived=all` since `/admin/rooms` defaults to the Active filter). Branch `codex review` clean. Server-guard curl checks verified on prod: `DELETE` on active room `a2-QCVJ5m7` → `409 not_archived` (room intact); missing id → `404 not_found`. Spec/plan in `docs/superpowers/{specs,plans}/2026-05-20-*`. Note: subagent-driven execution fell back to inline — subagents failed to dispatch ("prompt too long", they inherit the session's large MCP tool surface).
 - Next: Walk Task 4 browser steps 1-4 (archive/restore/delete click-through on `/admin/rooms?archived=all`) with an admin session. Side items still pending: OpenAI monthly spend cap on the global key (defense-in-depth #2), faculty invitation for `ai-ethics-exercise`, 2026-05-25 four-week MSBAi review.
