@@ -1,5 +1,5 @@
 import { createWriteStream } from "node:fs";
-import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
+import { lstat, mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
@@ -11,6 +11,9 @@ import type { GitHubSourceMeta } from "../context-sources";
 
 const GITHUB_FETCH_TIMEOUT_MS = 20_000;
 const GITHUB_TARBALL_MAX_BYTES = 25 * 1024 * 1024;
+const GITHUB_MAX_EXPANDED_BYTES = 20 * 1024 * 1024;
+const GITHUB_MAX_FILE_BYTES = 512 * 1024;
+const GITHUB_MAX_FILES = 500;
 const GITHUB_USER_AGENT = "MindForum external-context";
 const DEFAULT_GITHUB_INCLUDE = [
   "**/*.md",
@@ -159,7 +162,16 @@ export async function ingestGitHubRepo(input: GitHubIngestInput): Promise<GitHub
     });
 
     await writeGitHubTarball(response, tarPath);
-    await extract({ cwd: tmp, file: tarPath, strip: 1, strict: true });
+    await extract({
+      cwd: tmp,
+      file: tarPath,
+      strip: 1,
+      strict: true,
+      filter: (_filePath, entry) => {
+        const entryType = "type" in entry ? entry.type : "";
+        return entryType !== "SymbolicLink" && entryType !== "Link";
+      },
+    });
 
     const entries = await readTextEntries(tmp);
     const filtered = filterRepoEntries(entries, include, exclude);
@@ -234,8 +246,10 @@ async function writeGitHubTarball(response: Response, tarPath: string): Promise<
   await pipeline(Readable.fromWeb(stream as unknown as NodeReadableStream<Uint8Array>), createWriteStream(tarPath));
 }
 
-async function readTextEntries(root: string): Promise<RepoEntry[]> {
+export async function readTextEntries(root: string): Promise<RepoEntry[]> {
   const out: RepoEntry[] = [];
+  let expandedBytes = 0;
+  let scannedFiles = 0;
 
   async function walk(dir: string) {
     for (const name of await readdir(dir)) {
@@ -243,14 +257,22 @@ async function readTextEntries(root: string): Promise<RepoEntry[]> {
 
       const absolutePath = path.join(dir, name);
       const relativePath = path.relative(root, absolutePath).split(path.sep).join("/");
-      const info = await stat(absolutePath);
-
-      if (info.isDirectory()) {
+      const linkInfo = await lstat(absolutePath);
+      if (linkInfo.isSymbolicLink()) continue;
+      if (linkInfo.isDirectory()) {
         await walk(absolutePath);
         continue;
       }
 
-      if (!info.isFile() || isBinaryPath(relativePath)) continue;
+      if (!linkInfo.isFile() || isBinaryPath(relativePath)) continue;
+
+      scannedFiles += 1;
+      if (scannedFiles > GITHUB_MAX_FILES) throw new Error("github_repo_too_large");
+
+      const info = await stat(absolutePath);
+      if (info.size > GITHUB_MAX_FILE_BYTES) continue;
+      expandedBytes += info.size;
+      if (expandedBytes > GITHUB_MAX_EXPANDED_BYTES) throw new Error("github_repo_too_large");
 
       const buffer = await readFile(absolutePath);
       if (buffer.includes(0)) continue;

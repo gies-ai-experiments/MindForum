@@ -62,7 +62,11 @@ function githubErrorResponse(err: unknown): NextResponse {
   if (message === "github_repo_not_found") return NextResponse.json({ error: "not_found" }, { status: 404 });
   if (message === "github_rate_limited") return NextResponse.json({ error: "rate_limited" }, { status: 429 });
   if (message === "github_fetch_timeout") return NextResponse.json({ error: "timeout" }, { status: 504 });
-  if (message === "github_tarball_too_large" || message.startsWith("too_large")) {
+  if (
+    message === "github_tarball_too_large" ||
+    message === "github_repo_too_large" ||
+    message.startsWith("too_large")
+  ) {
     return NextResponse.json({ error: "too_large" }, { status: 413 });
   }
   console.error("github context attach failed:", err);

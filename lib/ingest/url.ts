@@ -11,6 +11,17 @@ const { JSDOM } = require("jsdom") as {
     window: Window & typeof globalThis & { close: () => void };
   };
 };
+const { Agent } = require("undici") as {
+  Agent: new (options: {
+    connect: {
+      lookup: (
+        hostname: string,
+        options: unknown,
+        callback: (error: Error | null, address: string, family: number) => void,
+      ) => void;
+    };
+  }) => { close: () => Promise<void> };
+};
 
 const MODEL_EXTRACT = process.env.OPENAI_MODEL_EXTRACT || "gpt-5.4-mini";
 const FETCH_TIMEOUT_MS = 30_000;
@@ -18,7 +29,7 @@ const MAX_REDIRECTS = 3;
 const MAX_CONTEXT_CHARS = 200_000;
 const MAX_URL_BYTES = 5 * 1024 * 1024;
 
-type ResolvedAddress = { address: string };
+type ResolvedAddress = { address: string; family?: number };
 type ResolveImpl = (hostname: string, options: { all: true }) => Promise<ResolvedAddress[]>;
 type ModelExtractor = (args: { instruction: string; text: string }) => Promise<string>;
 
@@ -128,16 +139,18 @@ async function fetchWithGuards(
   resolveImpl: ResolveImpl,
   redirects = 0,
 ): Promise<FetchedUrl> {
-  await validateHost(url, resolveImpl);
+  const addresses = await validateHost(url, resolveImpl);
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const dispatcher = pinnedDispatcher(addresses);
 
   try {
     const response = await fetchImpl(url, {
       redirect: "manual",
       signal: controller.signal,
-    });
+      dispatcher,
+    } as RequestInit & { dispatcher: unknown });
 
     if (isRedirect(response.status)) {
       if (redirects >= MAX_REDIRECTS) throw new Error("too_many_redirects");
@@ -157,18 +170,36 @@ async function fetchWithGuards(
     validateContentLength(response.headers.get("content-length"));
     const buffer = await readLimitedBody(response, MAX_URL_BYTES);
     return { url, contentType, originalLength: buffer.byteLength, buffer };
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") throw new Error("url_fetch_timeout");
+    throw err;
   } finally {
     clearTimeout(timeout);
+    await dispatcher.close();
   }
 }
 
-async function validateHost(url: URL, resolveImpl: ResolveImpl): Promise<void> {
+async function validateHost(url: URL, resolveImpl: ResolveImpl): Promise<ResolvedAddress[]> {
   if (isIP(url.hostname)) {
-    validateResolvedAddresses([{ address: url.hostname }]);
-    return;
+    const direct = [{ address: url.hostname, family: isIP(url.hostname) }];
+    validateResolvedAddresses(direct);
+    return direct;
   }
 
-  validateResolvedAddresses(await resolveImpl(url.hostname, { all: true }));
+  const addresses = await resolveImpl(url.hostname, { all: true });
+  validateResolvedAddresses(addresses);
+  return addresses;
+}
+
+function pinnedDispatcher(addresses: ResolvedAddress[]) {
+  const first = addresses[0];
+  return new Agent({
+    connect: {
+      lookup(_hostname, _options, callback) {
+        callback(null, first.address, first.family ?? isIP(first.address));
+      },
+    },
+  });
 }
 
 function validateContentLength(value: string | null): void {

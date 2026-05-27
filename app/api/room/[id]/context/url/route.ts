@@ -63,6 +63,7 @@ function urlErrorResponse(err: unknown): NextResponse {
   if (message === "too_many_redirects" || message === "invalid_redirect") {
     return NextResponse.json({ error: "invalid_url" }, { status: 400 });
   }
+  if (message === "url_fetch_timeout") return NextResponse.json({ error: "timeout" }, { status: 504 });
   console.error("url context attach failed:", err);
   return NextResponse.json({ error: "context_attach_failed" }, { status: 500 });
 }
