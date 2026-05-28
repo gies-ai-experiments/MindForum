@@ -1412,15 +1412,19 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
             <input
               value={githubInclude}
               onChange={(e) => setGithubInclude(e.target.value)}
-              placeholder="Include globs, comma-separated"
+              placeholder="Include globs, comma-separated (default: READMEs only)"
               style={inp()}
             />
             <input
               value={githubExclude}
               onChange={(e) => setGithubExclude(e.target.value)}
-              placeholder="Exclude globs, comma-separated"
+              placeholder="Exclude globs, comma-separated (optional)"
               style={inp()}
             />
+            <p style={{ margin: 0, fontSize: 12, color: "var(--muted)" }}>
+              Leave Include blank to attach just the README. To pull source or docs, list globs like{" "}
+              <code>**/*.md, src/**/*.ts</code>.
+            </p>
             {githubPreview && (
               <p style={{ margin: 0, fontSize: 13, color: "var(--muted)" }}>
                 Preview: {githubPreview.fileCount} files, {githubPreview.charCount.toLocaleString()} characters

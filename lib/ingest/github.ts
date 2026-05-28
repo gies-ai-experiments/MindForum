@@ -10,25 +10,27 @@ import { extract } from "tar";
 import type { GitHubSourceMeta } from "../context-sources";
 
 const GITHUB_FETCH_TIMEOUT_MS = 20_000;
-const GITHUB_TARBALL_MAX_BYTES = 25 * 1024 * 1024;
+// Tarball-download ceiling. Set well above GITHUB_MAX_EXPANDED_BYTES so repos
+// that carry large binary assets (README GIFs, sample datasets, fonts) can be
+// downloaded; the in-extract filter then discards binaries before they count
+// against the expanded-bytes cap.
+const GITHUB_TARBALL_MAX_BYTES = 100 * 1024 * 1024;
 const GITHUB_MAX_EXPANDED_BYTES = 20 * 1024 * 1024;
 const GITHUB_MAX_FILE_BYTES = 512 * 1024;
-const GITHUB_MAX_FILES = 500;
+// Per-call counter caps. These now apply only to *eligible* entries — i.e.
+// non-binary files that also match the caller's include globs and aren't
+// excluded. Real-world repos with i18n locales or moderately-sized monorepos
+// routinely cross 500 source files, so 2000 is the floor that admits them
+// while still bounding tar-bomb / pathological-repo blast radius.
+const GITHUB_MAX_FILES = 2000;
 const GITHUB_USER_AGENT = "MindForum external-context";
-const DEFAULT_GITHUB_INCLUDE = [
-  "**/*.md",
-  "**/*.py",
-  "**/*.ts",
-  "**/*.tsx",
-  "**/*.js",
-  "**/*.jsx",
-  "**/*.json",
-  "**/*.txt",
-  "**/*.rst",
-  "**/*.toml",
-  "**/*.yaml",
-  "**/*.yml",
-];
+// Default to READMEs only. This is the lowest-friction sane default for a
+// faculty user pasting a repo URL: nearly every repo has a README that
+// describes the project, the text fits comfortably under MAX_CONTEXT_CHARS,
+// and it avoids the common failure mode where a wide source-code glob blows
+// the per-source character budget. Users who want code or docs can override
+// `include` from the attach-repo modal.
+const DEFAULT_GITHUB_INCLUDE = ["**/README*"];
 const DEFAULT_GITHUB_EXCLUDE = [
   "node_modules/**",
   ".git/**",
@@ -115,6 +117,51 @@ export function isBinaryPath(filePath: string): boolean {
   );
 }
 
+// Stateful tar filter: skips symlinks, hardlinks, and known-binary paths, then
+// applies the caller's include/exclude globs, and finally caps the file count
+// and expanded bytes for the entries that survive. Eligibility is matched here
+// so non-text and out-of-scope entries don't get written to disk and don't
+// consume the caps — keeping behavior in lock-step with filterRepoEntries.
+//
+// The path that tar passes to filter() may include the top-level `repo-<sha>/`
+// directory created by GitHub tarballs (we extract with strip:1, but the
+// filter runs *before* stripping). Strip the leading segment when matching
+// globs so users author them relative to the repo root.
+export function createExtractCounter(include: string[], exclude: string[]) {
+  let files = 0;
+  let bytes = 0;
+  const filter = (filePath: string, entry: { type?: string; size?: number }): boolean => {
+    const entryType = "type" in entry ? entry.type ?? "" : "";
+    if (entryType === "SymbolicLink" || entryType === "Link") return false;
+    const isFile = entryType === "File" || entryType === "OldFile" || entryType === "ContiguousFile";
+    if (!isFile) return true;
+    if (isBinaryPath(filePath)) return false;
+    const relPath = stripTarballRoot(filePath);
+    if (relPath) {
+      const included = include.some((pattern) => minimatch(relPath, pattern, { dot: true }));
+      const excluded = exclude.some((pattern) => minimatch(relPath, pattern, { dot: true }));
+      if (!included || excluded) return false;
+    }
+    const size = "size" in entry && typeof entry.size === "number" ? entry.size : 0;
+    files += 1;
+    bytes += size;
+    if (files > GITHUB_MAX_FILES || bytes > GITHUB_MAX_EXPANDED_BYTES) {
+      throw new Error("github_repo_too_large");
+    }
+    return true;
+  };
+  return { filter };
+}
+
+// GitHub tarballs nest everything under `<owner>-<repo>-<sha>/`. tar's filter
+// callback sees the raw path; strip:1 only takes effect on disk write. Drop the
+// first segment so glob patterns can be authored relative to the repo root.
+// Returns the empty string for the root dir entry itself (no relative path).
+function stripTarballRoot(filePath: string): string {
+  const idx = filePath.indexOf("/");
+  return idx === -1 ? "" : filePath.slice(idx + 1);
+}
+
 export function filterRepoEntries(entries: RepoEntry[], include: string[], exclude: string[]): RepoEntry[] {
   return entries.filter((entry) => {
     if (isBinaryPath(entry.path)) return false;
@@ -154,8 +201,7 @@ export async function ingestGitHubRepo(input: GitHubIngestInput): Promise<GitHub
   const timeout = setTimeout(() => abort.abort(), GITHUB_FETCH_TIMEOUT_MS);
   const tmp = await mkdtemp(path.join(tmpdir(), "mindforum-gh-"));
   const tarPath = path.join(tmp, "repo.tar.gz");
-  let extractedBytes = 0;
-  let extractedFiles = 0;
+  const counter = createExtractCounter(include, exclude);
 
   try {
     const response = await fetchImpl(tarballUrl, {
@@ -169,19 +215,7 @@ export async function ingestGitHubRepo(input: GitHubIngestInput): Promise<GitHub
       file: tarPath,
       strip: 1,
       strict: true,
-      filter: (_filePath, entry) => {
-        const entryType = "type" in entry ? entry.type : "";
-        if (entryType === "SymbolicLink" || entryType === "Link") return false;
-        if (entryType === "File" || entryType === "OldFile" || entryType === "ContiguousFile") {
-          const size = "size" in entry && typeof entry.size === "number" ? entry.size : 0;
-          extractedFiles += 1;
-          extractedBytes += size;
-          if (extractedFiles > GITHUB_MAX_FILES || extractedBytes > GITHUB_MAX_EXPANDED_BYTES) {
-            throw new Error("github_repo_too_large");
-          }
-        }
-        return true;
-      },
+      filter: counter.filter,
     });
 
     const entries = await readTextEntries(tmp);

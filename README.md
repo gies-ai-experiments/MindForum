@@ -11,6 +11,9 @@ Stack: Next.js 15, React 19, TypeScript, Server-Sent Events, OpenAI API, in-memo
 - **File upload** — PDF, DOCX, TXT, MD. Parsed server-side; extracted text is cached and fed to the AI as context when a file is selected.
 - **AI collaborator** — silent by default. Mention `@ai` to bring it into the conversation. Has access to the recent chat history and any files currently checked.
 - **Project brief** — one button turns the conversation into a structured brief (themes, outline, risks, next steps, collaborators). Posts back to the thread for everyone.
+- **External context sources** — attach a public URL or a GitHub repo as a context source.
+  - URL scrape extracts the article via Mozilla Readability, then asks `gpt-5.4-mini` to pull out brainstorm-ready claims; the model has OpenAI's hosted `web_search_preview` tool (capped at 3 calls per attach) for following citations.
+  - GitHub repo attach pulls READMEs by default; override include/exclude globs to fetch source or docs. SSRF-guarded; tarballs capped at 100 MB, expanded files capped at 20 MB / 2000 files.
 
 ## Local development
 
@@ -27,6 +30,7 @@ Environment variables:
 | `OPENAI_API_KEY` | yes | — | Your OpenAI key |
 | `OPENAI_MODEL` | no | `gpt-5.4` | Chat + brief model |
 | `OPENAI_MODEL_BRIEF` | no | same as `OPENAI_MODEL` | Override for the brief endpoint only |
+| `OPENAI_MODEL_EXTRACT` | no | `gpt-5.4-mini` | URL-scrape extraction model (Responses API + `web_search_preview`) |
 | `PORT` | no | 3000 | |
 
 ## VPS deployment

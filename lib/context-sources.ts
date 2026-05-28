@@ -20,6 +20,11 @@ export type UrlSourceMeta = {
   readableLength: number;
   extractedLength: number;
   model: string;
+  // Number of OpenAI hosted `web_search_preview` tool calls the model issued
+  // while extracting. The model is capped at 3 by its system prompt. Used as
+  // the audit trail surface alongside the model-authored "Sources" footer in
+  // the extracted markdown.
+  webSearchCallCount?: number;
 };
 
 export type SourceMeta = GitHubSourceMeta | UrlSourceMeta | null;
