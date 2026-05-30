@@ -149,8 +149,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         // the verbatim window, and the fold everywhere below.
         const chatCount = Math.max(0, (ctx?.chatCount ?? 0) - 1);
         if (chatCount <= GATE) {
-          // RAW (common case): identical to today — all messages, verbatim.
-          const all = await getRecentMessages(id, GATE);
+          const all = await getRecentMessages(id, GATE + 1);
           windowMessages = all.filter((m) => m.id !== aiMsg.id);
         } else {
           try {
