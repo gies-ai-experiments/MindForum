@@ -179,8 +179,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
             }
           } catch (err) {
             // Recap failed → degrade to today's raw path. Never block a reply.
-            console.error("recap context failed (falling back to raw):", err);
-            const all = await getRecentMessages(id, GATE);
+            const all = await getRecentMessages(id, GATE + 1);
             windowMessages = all.filter((m) => m.id !== aiMsg.id);
             recapBlock = "";
           }
