@@ -147,10 +147,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         // Decide the conversation-context mode by room length. The stub AI msg is
         // already in the table (kind:"chat", empty) — exclude it from the delta,
         // the verbatim window, and the fold everywhere below.
-        let windowMessages: Message[] = [];
-        let recapBlock = "";
-        const chatCount = ctx?.chatCount ?? 0;
-
+        const chatCount = Math.max(0, (ctx?.chatCount ?? 0) - 1);
         if (chatCount <= GATE) {
           // RAW (common case): identical to today — all messages, verbatim.
           const all = await getRecentMessages(id, GATE);
