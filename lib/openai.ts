@@ -167,15 +167,24 @@ export async function* chatReplyStream(
         function: { name: t.name, arguments: t.args },
       })),
     });
-    for (const t of toolCalls) {
+    for (let i = 0; i < toolCalls.length; i++) {
+      const t = toolCalls[i];
       let name = "";
       try {
         name = JSON.parse(t.args || "{}").name ?? "";
       } catch {
         /* ignore malformed args */
       }
-      const result = resolveDocumentRead(docs, name);
-      if (result.found && name) opts.onReadDocument?.(name);
+
+      const result =
+        i === 0
+          ? resolveDocumentRead(docs, name)
+          : {
+              found: false,
+              text: "Please request only one document at a time. If you need another file, call read_document again with a single exact file name.",
+            };
+
+      if (i === 0 && result.found && name) opts.onReadDocument?.(name);
       convo.push({ role: "tool", tool_call_id: t.id, content: result.text });
     }
   }
