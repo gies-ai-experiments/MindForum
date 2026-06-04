@@ -62,6 +62,7 @@ jobs:
         with:
           name: node-app
           path: azure-package
+          include-hidden-files: true
 
   deploy:
     runs-on: ubuntu-latest
