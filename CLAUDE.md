@@ -6,10 +6,11 @@ Shared AI brainstorming room app for small faculty groups. Next.js 15 + SSE + Po
 
 | | |
 |---|---|
-| Prod URL | (private — see `~/.claude/projects/-Users-vishal-research-mindforum/memory/`) |
-| VPS path | `/root/repos/mindforum` (ssh alias `vps`) |
-| Process | PM2 id `mindforum`, port 3006 |
-| Database | Postgres: role `mindforum`, db `mindforum`, localhost:5432 |
+| Prod URL | (private — see `~/.claude/projects/-Users-vishal-research-mindforum/memory/`) — **now served by Azure** (cut over 2026-06-08) |
+| Azure app | App Service `mindforum`, RG `DL_ResourceGroup_01`, sub `urbana-business-disruptionlab`, North Central US; host `mindforum.azurewebsites.net`. Deploy via `main_mindforum.yml`. |
+| Azure DB | Postgres Flexible Server `dl-postgresqlserver-01.postgres.database.azure.com`, db `postgres` (dump restored; 17 rooms live) |
+| Azure OpenAI | endpoint `dl-foundry-mindforum.openai.azure.com`; models routed FAST/DEFAULT=`gpt-4.1`, STRONG=`gpt-5.4` (see `lib/model-routing.ts`) |
+| VPS (rollback) | `/root/repos/mindforum` (ssh alias `vps`), PM2 `mindforum` port 3006, Postgres role/db `mindforum` localhost:5432. Still running + still auto-deployed; rollback = flip CF record back to proxied `A → 76.13.122.44` (null worker route left in place for this). |
 | Repo | `gies-ai-experiments/MindForum` (public, MIT; deploy key `mindforum_deploy` on VPS) |
 
 ## Required env vars
@@ -59,7 +60,7 @@ Per-room setup artifacts live under `rooms/YYYY-MM-DD-<slug>/`:
 
 ## Current Focus
 
-Creator-rooms v1 is live with the first real creator signed in (Ashleyn Castelino). Sentry is wired. **Azure migration (app + DB) is handed off to collaborators — tracked in issue [#22](https://github.com/gies-ai-experiments/MindForum/issues/22), led by Ash; VPS remains production until cutover.** Watch for first real-creator usage + Sentry alerts; gather feedback before opening v2 (per-creator OpenAI keys + spend caps + usage events). Side items still pending: OpenAI monthly spend cap on the global key (defense-in-depth #2), faculty invitation for `ai-ethics-exercise`, overdue four-week MSBAi review (was 2026-05-25).
+Creator-rooms v1 is live with the first real creator signed in (Ashleyn Castelino). Sentry is wired. **Azure migration DNS cutover is DONE (2026-06-08):** `mindforum.illinihunt.org` now resolves DNS-only (grey-cloud) `CNAME → mindforum.azurewebsites.net` with an App Service managed cert (SNI, GeoTrust, exp 2026-12-09); Azure app + restored DB (17 rooms) + Azure OpenAI all verified healthy on the live domain. Tracked in issue [#22](https://github.com/gies-ai-experiments/MindForum/issues/22). **Remaining #22 cleanup:** retire the VPS deploy in `scripts/deploy.sh` + the orphaned `feat-polls-and-decisions_mindforum(staging)` workflow (pushes to `main` still double-deploy to VPS *and* Azure) — keep the VPS as rollback until Azure has soaked. Watch for usage + Sentry alerts; gather feedback before v2 (per-creator OpenAI keys + spend caps + usage events). Other side items: OpenAI monthly spend cap (defense-in-depth #2), faculty invitation for `ai-ethics-exercise`, overdue four-week MSBAi review (was 2026-05-25).
 
 ## Auto-deploy
 
