@@ -1,196 +1,162 @@
-"use client";
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { MAX_SYSTEM_PROMPT_CHARS } from "@/lib/limits";
+import Link from "next/link";
+import JoinRoomForm from "./JoinRoomForm";
+import AdminCreateCard from "./AdminCreateCard";
 
-const ADMIN_TOKEN_KEY = "mindforum_admin_token";
+export const metadata = {
+  title: "MindForum — brainstorm together, with an AI that waits its turn",
+};
 
-export default function Home() {
-  const router = useRouter();
-  const [name, setName] = useState("");
-  const [systemPrompt, setSystemPrompt] = useState("");
-  const [joinId, setJoinId] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState("");
-  const [adminToken, setAdminToken] = useState<string | null>(null);
-  const promptTooLong = systemPrompt.length > MAX_SYSTEM_PROMPT_CHARS;
+const FEATURES = [
+  {
+    title: "An AI that waits its turn",
+    body: "The AI is silent by default. Mention @ai when you want a synthesis, a counterpoint, or a fresh angle — the rest of the time the conversation belongs to the group.",
+  },
+  {
+    title: "Shared files as context",
+    body: "Upload PDFs, Word docs, or notes to the room. Check the ones that matter and the AI reads them before it answers, so its suggestions are grounded in your material.",
+  },
+  {
+    title: "One-click project brief",
+    body: "When the session winds down, turn the whole thread into a structured brief — themes, outline, risks, next steps — and download it as Markdown.",
+  },
+  {
+    title: "Polls & decisions",
+    body: "Type /poll to put a question to the group. The AI drafts options from the discussion, tallies stay hidden until the poll closes, and outcomes land in the brief.",
+  },
+  {
+    title: "Live, lightweight presence",
+    body: "Messages stream in real time. @-mention a colleague to flag something for them. No installs, no accounts for participants — the link is the invitation.",
+  },
+  {
+    title: "A facilitator you design",
+    body: "Each room carries its own AI guidance. Tell it to probe before proposing, to play devil's advocate, or to keep a grant reviewer's eye — every room gets its own personality.",
+  },
+];
 
-  // Pick up ?token=... on mount, cache in localStorage, strip from URL.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const fromUrl = params.get("token");
-    if (fromUrl) {
-      window.localStorage.setItem(ADMIN_TOKEN_KEY, fromUrl);
-      setAdminToken(fromUrl);
-      params.delete("token");
-      const qs = params.toString();
-      window.history.replaceState({}, "", window.location.pathname + (qs ? `?${qs}` : ""));
-      return;
-    }
-    setAdminToken(window.localStorage.getItem(ADMIN_TOKEN_KEY));
-  }, []);
+const STEPS = [
+  {
+    title: "Create a room",
+    body: "Sign in, name the room, and write a short brief for the AI: what the group is working on and how it should behave.",
+  },
+  {
+    title: "Share the link",
+    body: "Colleagues join in one click with just their name — no accounts, no setup. Comfortable for groups of two to six.",
+  },
+  {
+    title: "Think out loud",
+    body: "Brainstorm as you would in a hallway conversation. Pull the AI in with @ai when it's useful; export a brief when you're done.",
+  },
+];
 
-  async function onCreate(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    setErr("");
-    try {
-      const headers: Record<string, string> = { "content-type": "application/json" };
-      if (adminToken) headers["x-admin-token"] = adminToken;
-      const res = await fetch("/api/room", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          name: name || "Untitled Room",
-          systemPrompt: systemPrompt.trim(),
-        }),
-      });
-      if (res.status === 401) {
-        window.localStorage.removeItem(ADMIN_TOKEN_KEY);
-        setAdminToken(null);
-        throw new Error("unauthorized");
-      }
-      if (!res.ok) throw new Error("create_failed");
-      const { id } = await res.json();
-      router.push(`/room/${id}`);
-    } catch (e) {
-      setErr(
-        e instanceof Error && e.message === "unauthorized"
-          ? "Room creation is restricted. Ask the admin for an access link."
-          : "Could not create room."
-      );
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function onJoin(e: React.FormEvent) {
-    e.preventDefault();
-    const trimmed = joinId.trim();
-    if (!trimmed) return;
-    router.push(`/room/${trimmed}`);
-  }
-
+export default function LandingPage() {
   return (
-    <main style={{ maxWidth: 720, margin: "10vh auto", padding: 24 }}>
-      <h1 style={{ fontSize: 40, margin: 0 }}>MindForum</h1>
-      <p style={{ color: "var(--muted)", marginTop: 8, fontSize: 17 }}>
-        A shared AI workspace for group brainstorming. Create a room, invite collaborators with the link, upload docs, chat together with an AI that joins in when mentioned.
-      </p>
+    <main className="landing">
+      <header className="landing-nav">
+        <span className="landing-wordmark">MindForum</span>
+        <nav>
+          <Link href="/dashboard" className="landing-btn landing-btn--ghost">
+            Sign in
+          </Link>
+        </nav>
+      </header>
 
-      <section style={card()}>
-        <h2 style={{ marginTop: 0 }}>Create a room</h2>
-        <form onSubmit={onCreate} style={{ display: "grid", gap: 10 }}>
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Room name (e.g., Fall 2026 Grant Brainstorm)"
-            style={input()}
-          />
-          <div>
-            <label
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                gap: 8,
-                fontSize: 13,
-                color: "var(--muted)",
-                marginBottom: 4,
-              }}
-            >
-              <span>AI guidance (optional) — how should the AI behave in this room?</span>
-              <span style={{ color: promptTooLong ? "#c00" : "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
-                {systemPrompt.length.toLocaleString()} / {MAX_SYSTEM_PROMPT_CHARS.toLocaleString()}
-              </span>
-            </label>
-            <textarea
-              value={systemPrompt}
-              onChange={(e) => setSystemPrompt(e.target.value)}
-              placeholder="e.g., You are helping four faculty shape a grant proposal. Ask probing questions before suggesting answers. Prefer plain language over jargon."
-              rows={4}
-              style={{
-                ...input(),
-                width: "100%",
-                display: "block",
-                resize: "vertical",
-                fontFamily: "inherit",
-                borderColor: promptTooLong ? "#c00" : undefined,
-              }}
-            />
-            {promptTooLong && (
-              <p style={{ color: "#c00", fontSize: 12, margin: "4px 0 0" }}>
-                System prompt is {(systemPrompt.length - MAX_SYSTEM_PROMPT_CHARS).toLocaleString()} characters over the {MAX_SYSTEM_PROMPT_CHARS.toLocaleString()}-char limit. Keep it lean — put reference material in uploaded room files instead.
-              </p>
-            )}
+      <section className="landing-hero">
+        <div className="landing-hero__copy">
+          <h1>
+            Brainstorm together, with an AI that <em>waits its turn</em>.
+          </h1>
+          <p>
+            MindForum is a shared room where a small group — and one
+            well-briefed AI — think through a problem together. The AI reads
+            the room, knows your documents, and speaks only when you mention{" "}
+            <code>@ai</code>.
+          </p>
+          <div className="landing-hero__cta">
+            <Link href="/dashboard" className="landing-btn landing-btn--orange">
+              Sign in to create rooms
+            </Link>
+            <a href="#join" className="landing-btn landing-btn--ghost">
+              Have a room link? Join →
+            </a>
           </div>
-          <div style={{ display: "flex", justifyContent: "flex-end" }}>
-            <button type="submit" disabled={loading || promptTooLong} style={btnPrimary()}>
-              {loading ? "Creating…" : "Create"}
-            </button>
+        </div>
+
+        <div className="landing-chat-mock" aria-hidden="true">
+          <div className="landing-chat-mock__title">Fall 2026 Grant Brainstorm</div>
+          <div className="landing-bubble">
+            <span className="landing-bubble__name">Priya</span>
+            What if we framed the pilot around student outcomes instead of the
+            tooling?
           </div>
-        </form>
+          <div className="landing-bubble">
+            <span className="landing-bubble__name">Marcus</span>
+            Stronger for this RFP. <strong>@ai</strong> — does the draft
+            proposal we uploaded support that framing?
+          </div>
+          <div className="landing-bubble landing-bubble--ai">
+            <span className="landing-bubble__name">AI</span>
+            Mostly, yes — sections 2 and 4 already lead with outcomes. The gap
+            is evaluation: the draft names no baseline measure. Want three
+            options the group could react to?
+          </div>
+        </div>
       </section>
 
-      <section style={card()}>
-        <h2 style={{ marginTop: 0 }}>Join a room</h2>
-        <form onSubmit={onJoin} style={{ display: "flex", gap: 8 }}>
-          <input
-            value={joinId}
-            onChange={(e) => setJoinId(e.target.value)}
-            placeholder="Room ID (from the link)"
-            style={input()}
-          />
-          <button type="submit" style={btnSecondary()}>
-            Open
-          </button>
-        </form>
+      <section className="landing-section">
+        <h2>How it works</h2>
+        <ol className="landing-steps">
+          {STEPS.map((s, i) => (
+            <li key={s.title} className="landing-card">
+              <span className="landing-step__num">{i + 1}</span>
+              <h3>{s.title}</h3>
+              <p>{s.body}</p>
+            </li>
+          ))}
+        </ol>
       </section>
 
-      {err && <p style={{ color: "crimson" }}>{err}</p>}
+      <section className="landing-section">
+        <h2>What's in the room</h2>
+        <div className="landing-features">
+          {FEATURES.map((f) => (
+            <div key={f.title} className="landing-card">
+              <h3>{f.title}</h3>
+              <p>{f.body}</p>
+            </div>
+          ))}
+        </div>
+      </section>
 
-      <p style={{ color: "var(--muted)", marginTop: 32, fontSize: 13 }}>
-        Mention <code>@ai</code> in chat to pull the AI into the conversation. Otherwise it stays silent.
-      </p>
+      <section id="join" className="landing-section landing-join">
+        <div className="landing-card">
+          <h2>Join a room</h2>
+          <p>
+            Invited by a colleague? Their link takes you straight in — or paste
+            the room ID here.
+          </p>
+          <JoinRoomForm />
+        </div>
+      </section>
+
+      <AdminCreateCard />
+
+      <footer className="landing-footer">
+        <span>
+          Built at Gies College of Business, University of Illinois
+          Urbana-Champaign.
+        </span>
+        <span>
+          <a
+            href="https://github.com/gies-ai-experiments/MindForum"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Open source (MIT)
+          </a>
+          {" · "}
+          <Link href="/dashboard">Creator sign-in</Link>
+        </span>
+      </footer>
     </main>
   );
-}
-
-function card(): React.CSSProperties {
-  return {
-    background: "var(--card)",
-    border: "1px solid var(--border)",
-    borderRadius: 12,
-    padding: 20,
-    marginTop: 24,
-  };
-}
-function input(): React.CSSProperties {
-  return {
-    flex: 1,
-    padding: "10px 12px",
-    borderRadius: 8,
-    border: "1px solid var(--border)",
-    fontSize: 16,
-  };
-}
-function btnPrimary(): React.CSSProperties {
-  return {
-    background: "var(--orange)",
-    color: "white",
-    border: "none",
-    borderRadius: 8,
-    padding: "10px 16px",
-    fontWeight: 600,
-  };
-}
-function btnSecondary(): React.CSSProperties {
-  return {
-    background: "var(--navy)",
-    color: "white",
-    border: "none",
-    borderRadius: 8,
-    padding: "10px 16px",
-    fontWeight: 600,
-  };
 }
