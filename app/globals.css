@@ -18,6 +18,153 @@ button:disabled { cursor: not-allowed; opacity: 0.6; }
 input, textarea { font-family: inherit; }
 code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: rgba(19,41,75,0.06); padding: 1px 4px; border-radius: 4px; }
 
+/* ----- Landing ----- */
+
+.landing {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 24px 24px 48px;
+}
+.landing-nav {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 4px 0 28px;
+}
+.landing-wordmark {
+  font-family: Montserrat, system-ui, sans-serif;
+  font-weight: 700; font-size: 20px; color: var(--navy);
+}
+
+.landing-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: 40px;
+  align-items: center;
+  padding: 24px 0 8px;
+}
+.landing-hero__copy h1 {
+  font-size: 42px; line-height: 1.15; margin: 0;
+}
+.landing-hero__copy h1 em {
+  font-style: normal; color: var(--orange);
+}
+.landing-hero__copy p {
+  font-size: 18px; line-height: 1.55; color: var(--muted); margin: 16px 0 24px;
+}
+.landing-hero__cta {
+  display: flex; gap: 12px; flex-wrap: wrap; align-items: center;
+}
+
+.landing-btn {
+  display: inline-block;
+  border-radius: 8px;
+  padding: 10px 18px;
+  font-weight: 600; font-size: 15px;
+  text-decoration: none;
+  border: none;
+}
+.landing-btn--orange { background: var(--orange); color: white; }
+.landing-btn--navy { background: var(--navy); color: white; }
+.landing-btn--ghost {
+  background: transparent; color: var(--navy);
+  border: 1px solid var(--border);
+}
+.landing-btn--ghost:hover { border-color: var(--navy); }
+
+.landing-chat-mock {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 8px 30px rgba(19, 41, 75, 0.08);
+  display: grid; gap: 10px;
+}
+.landing-chat-mock__title {
+  font-family: Montserrat, system-ui, sans-serif;
+  font-weight: 600; font-size: 13px; color: var(--navy);
+  padding-bottom: 8px; border-bottom: 1px solid var(--border);
+}
+.landing-bubble {
+  background: var(--bg);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px; line-height: 1.45;
+}
+.landing-bubble strong { color: var(--orange); }
+.landing-bubble__name {
+  display: block;
+  font-weight: 600; font-size: 12px; color: var(--navy);
+  margin-bottom: 2px;
+}
+.landing-bubble--ai {
+  background: rgba(19, 41, 75, 0.06);
+  border-left: 3px solid var(--orange);
+}
+
+.landing-section { padding: 36px 0 0; }
+.landing-section h2 { font-size: 26px; margin: 0 0 18px; }
+
+.landing-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+}
+.landing-card h3 { margin: 0 0 6px; font-size: 16px; }
+.landing-card p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
+
+.landing-steps {
+  list-style: none; padding: 0; margin: 0;
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
+}
+.landing-step__num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; margin-bottom: 10px;
+  border-radius: 50%;
+  background: var(--navy); color: white;
+  font-weight: 700; font-size: 14px;
+}
+
+.landing-features {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
+}
+
+.landing-join .landing-card { max-width: 560px; }
+.landing-join-form { display: flex; gap: 8px; margin-top: 12px; }
+.landing-join-form input {
+  flex: 1; padding: 10px 12px;
+  border-radius: 8px; border: 1px solid var(--border);
+  font-size: 16px;
+}
+
+.landing-admin-create { margin-top: 36px; }
+.landing-admin-create h2 { margin: 0 0 12px; font-size: 20px; }
+.landing-admin-create input,
+.landing-admin-create textarea {
+  width: 100%; display: block;
+  padding: 10px 12px;
+  border-radius: 8px; border: 1px solid var(--border);
+  font-size: 16px;
+  resize: vertical;
+}
+.landing-admin-create__label {
+  display: flex; justify-content: space-between; gap: 8px;
+  font-size: 13px; color: var(--muted); margin-bottom: 4px;
+}
+
+.landing-footer {
+  display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  margin-top: 48px; padding-top: 20px;
+  border-top: 1px solid var(--border);
+  font-size: 13px; color: var(--muted);
+}
+.landing-footer a { color: var(--navy); }
+
+@media (max-width: 800px) {
+  .landing-hero { grid-template-columns: 1fr; gap: 28px; }
+  .landing-hero__copy h1 { font-size: 32px; }
+  .landing-steps, .landing-features { grid-template-columns: 1fr; }
+}
+
 /* ----- Polls & Decisions ----- */
 
 .modal-backdrop {
