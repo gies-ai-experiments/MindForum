@@ -15,7 +15,8 @@ export default function JoinRoomForm() {
     const trimmed = joinId.trim();
     if (!trimmed) return;
     // Accept a full room URL pasted in, not just the bare ID.
-    const fromUrl = trimmed.match(/\/room\/([a-z0-9-]+)/i);
+    // Room ids are nanoid(10) (alphabet A-Za-z0-9_-) or creator slugs.
+    const fromUrl = trimmed.match(/\/room\/([\w-]+)/);
     router.push(`/room/${fromUrl ? fromUrl[1] : trimmed}`);
   }
 
