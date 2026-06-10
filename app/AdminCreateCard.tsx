@@ -36,7 +36,18 @@ export default function AdminCreateCard() {
     setAdminToken(window.localStorage.getItem(ADMIN_TOKEN_KEY));
   }, []);
 
-  if (!adminToken) return null;
+  // No token and nothing to report: render nothing for anonymous visitors.
+  // After a 401 the token is cleared but `err` is set — keep the card so the
+  // "creation is restricted" message is visible instead of silently vanishing.
+  if (!adminToken && !err) return null;
+  if (!adminToken) {
+    return (
+      <section className="landing-card landing-admin-create">
+        <h2>Create a room (admin)</h2>
+        <p style={{ color: "crimson", margin: 0 }}>{err}</p>
+      </section>
+    );
+  }
 
   async function onCreate(e: React.FormEvent) {
     e.preventDefault();
