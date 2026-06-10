@@ -1,196 +1,210 @@
-"use client";
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { MAX_SYSTEM_PROMPT_CHARS } from "@/lib/limits";
+import Link from "next/link";
+import JoinRoomForm from "./JoinRoomForm";
+import AdminCreateCard from "./AdminCreateCard";
+import FeatureShowcase from "./FeatureShowcase";
 
-const ADMIN_TOKEN_KEY = "mindforum_admin_token";
+export const metadata = {
+  title: "MindForum — brainstorm together, with an AI that waits its turn",
+};
 
-export default function Home() {
-  const router = useRouter();
-  const [name, setName] = useState("");
-  const [systemPrompt, setSystemPrompt] = useState("");
-  const [joinId, setJoinId] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState("");
-  const [adminToken, setAdminToken] = useState<string | null>(null);
-  const promptTooLong = systemPrompt.length > MAX_SYSTEM_PROMPT_CHARS;
+const TRUSTED: { name: string; href?: string }[] = [
+  { name: "Gies College of Business", href: "https://giesbusiness.illinois.edu" },
+  { name: "Disruption Lab" },
+  { name: "MSBAi" },
+  { name: "AI Experiments" },
+  { name: "Faculty cohorts" },
+];
 
-  // Pick up ?token=... on mount, cache in localStorage, strip from URL.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const fromUrl = params.get("token");
-    if (fromUrl) {
-      window.localStorage.setItem(ADMIN_TOKEN_KEY, fromUrl);
-      setAdminToken(fromUrl);
-      params.delete("token");
-      const qs = params.toString();
-      window.history.replaceState({}, "", window.location.pathname + (qs ? `?${qs}` : ""));
-      return;
-    }
-    setAdminToken(window.localStorage.getItem(ADMIN_TOKEN_KEY));
-  }, []);
-
-  async function onCreate(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    setErr("");
-    try {
-      const headers: Record<string, string> = { "content-type": "application/json" };
-      if (adminToken) headers["x-admin-token"] = adminToken;
-      const res = await fetch("/api/room", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          name: name || "Untitled Room",
-          systemPrompt: systemPrompt.trim(),
-        }),
-      });
-      if (res.status === 401) {
-        window.localStorage.removeItem(ADMIN_TOKEN_KEY);
-        setAdminToken(null);
-        throw new Error("unauthorized");
-      }
-      if (!res.ok) throw new Error("create_failed");
-      const { id } = await res.json();
-      router.push(`/room/${id}`);
-    } catch (e) {
-      setErr(
-        e instanceof Error && e.message === "unauthorized"
-          ? "Room creation is restricted. Ask the admin for an access link."
-          : "Could not create room."
-      );
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function onJoin(e: React.FormEvent) {
-    e.preventDefault();
-    const trimmed = joinId.trim();
-    if (!trimmed) return;
-    router.push(`/room/${trimmed}`);
-  }
-
+/**
+ * One copy of the trusted-by logos. Rendered twice inside the marquee track so
+ * the right-to-left scroll loops seamlessly; the duplicate is `hidden` (aria +
+ * untabbable) so assistive tech and keyboard users only meet each link once.
+ */
+function TrustedRow({ hidden = false }: { hidden?: boolean }) {
   return (
-    <main style={{ maxWidth: 720, margin: "10vh auto", padding: 24 }}>
-      <h1 style={{ fontSize: 40, margin: 0 }}>MindForum</h1>
-      <p style={{ color: "var(--muted)", marginTop: 8, fontSize: 17 }}>
-        A shared AI workspace for group brainstorming. Create a room, invite collaborators with the link, upload docs, chat together with an AI that joins in when mentioned.
-      </p>
-
-      <section style={card()}>
-        <h2 style={{ marginTop: 0 }}>Create a room</h2>
-        <form onSubmit={onCreate} style={{ display: "grid", gap: 10 }}>
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Room name (e.g., Fall 2026 Grant Brainstorm)"
-            style={input()}
-          />
-          <div>
-            <label
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                gap: 8,
-                fontSize: 13,
-                color: "var(--muted)",
-                marginBottom: 4,
-              }}
-            >
-              <span>AI guidance (optional) — how should the AI behave in this room?</span>
-              <span style={{ color: promptTooLong ? "#c00" : "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
-                {systemPrompt.length.toLocaleString()} / {MAX_SYSTEM_PROMPT_CHARS.toLocaleString()}
-              </span>
-            </label>
-            <textarea
-              value={systemPrompt}
-              onChange={(e) => setSystemPrompt(e.target.value)}
-              placeholder="e.g., You are helping four faculty shape a grant proposal. Ask probing questions before suggesting answers. Prefer plain language over jargon."
-              rows={4}
-              style={{
-                ...input(),
-                width: "100%",
-                display: "block",
-                resize: "vertical",
-                fontFamily: "inherit",
-                borderColor: promptTooLong ? "#c00" : undefined,
-              }}
-            />
-            {promptTooLong && (
-              <p style={{ color: "#c00", fontSize: 12, margin: "4px 0 0" }}>
-                System prompt is {(systemPrompt.length - MAX_SYSTEM_PROMPT_CHARS).toLocaleString()} characters over the {MAX_SYSTEM_PROMPT_CHARS.toLocaleString()}-char limit. Keep it lean — put reference material in uploaded room files instead.
-              </p>
-            )}
-          </div>
-          <div style={{ display: "flex", justifyContent: "flex-end" }}>
-            <button type="submit" disabled={loading || promptTooLong} style={btnPrimary()}>
-              {loading ? "Creating…" : "Create"}
-            </button>
-          </div>
-        </form>
-      </section>
-
-      <section style={card()}>
-        <h2 style={{ marginTop: 0 }}>Join a room</h2>
-        <form onSubmit={onJoin} style={{ display: "flex", gap: 8 }}>
-          <input
-            value={joinId}
-            onChange={(e) => setJoinId(e.target.value)}
-            placeholder="Room ID (from the link)"
-            style={input()}
-          />
-          <button type="submit" style={btnSecondary()}>
-            Open
-          </button>
-        </form>
-      </section>
-
-      {err && <p style={{ color: "crimson" }}>{err}</p>}
-
-      <p style={{ color: "var(--muted)", marginTop: 32, fontSize: 13 }}>
-        Mention <code>@ai</code> in chat to pull the AI into the conversation. Otherwise it stays silent.
-      </p>
-    </main>
+    <div className="landing-trusted__group" aria-hidden={hidden || undefined}>
+      {TRUSTED.map(({ name, href }) =>
+        href ? (
+          <a
+            key={name}
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            tabIndex={hidden ? -1 : undefined}
+            className="landing-trusted__logo landing-trusted__logo--link"
+          >
+            {name}
+          </a>
+        ) : (
+          <span key={name} className="landing-trusted__logo">
+            {name}
+          </span>
+        )
+      )}
+    </div>
   );
 }
 
-function card(): React.CSSProperties {
-  return {
-    background: "var(--card)",
-    border: "1px solid var(--border)",
-    borderRadius: 12,
-    padding: 20,
-    marginTop: 24,
-  };
-}
-function input(): React.CSSProperties {
-  return {
-    flex: 1,
-    padding: "10px 12px",
-    borderRadius: 8,
-    border: "1px solid var(--border)",
-    fontSize: 16,
-  };
-}
-function btnPrimary(): React.CSSProperties {
-  return {
-    background: "var(--orange)",
-    color: "white",
-    border: "none",
-    borderRadius: 8,
-    padding: "10px 16px",
-    fontWeight: 600,
-  };
-}
-function btnSecondary(): React.CSSProperties {
-  return {
-    background: "var(--navy)",
-    color: "white",
-    border: "none",
-    borderRadius: 8,
-    padding: "10px 16px",
-    fontWeight: 600,
-  };
+export default function LandingPage() {
+  return (
+    <main className="landing">
+      <header className="landing-nav">
+        <span className="landing-wordmark">MindForum</span>
+        <nav className="landing-nav__links">
+          <a href="#features">Features</a>
+          <a href="#how-it-works">How it works</a>
+          <a href="#join">Join</a>
+        </nav>
+        <div className="landing-nav__actions">
+          <Link href="/dashboard" className="landing-btn landing-btn--orange">
+            Sign in
+          </Link>
+        </div>
+      </header>
+
+      <section className="landing-hero">
+        <div className="landing-hero__grid" aria-hidden="true">
+          <span className="landing-hero__grid-plane landing-hero__grid-plane--floor" />
+          <span className="landing-hero__grid-plane landing-hero__grid-plane--ceil" />
+          <span className="landing-hero__grid-dots" />
+        </div>
+        <h1>
+          <span className="landing-hero__line">Brainstorm together,</span>
+          <span className="landing-hero__line landing-hero__line--accent">
+            with an AI that waits its turn.
+          </span>
+        </h1>
+        <p className="landing-hero__sub">
+          MindForum is a shared room where a small group — and one well-briefed AI —
+          think through a problem together. The AI reads the room, knows your documents,
+          and speaks only when you mention <code>@ai</code>.
+        </p>
+        <div className="landing-hero__cta">
+          <Link href="/dashboard" className="landing-btn landing-btn--orange landing-btn--lg">
+            Sign in to create rooms
+          </Link>
+          <a href="#join" className="landing-btn landing-btn--ghost-dark landing-btn--lg">
+            Have a room link? Join →
+          </a>
+        </div>
+
+        <div className="landing-trusted">
+          <p>Trusted by teams at</p>
+          <div className="landing-trusted__marquee">
+            <div className="landing-trusted__track">
+              <TrustedRow />
+              <TrustedRow hidden />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="landing-demo" aria-label="Product demo video">
+        <div className="landing-demo__frame">
+          <div className="landing-show__windowbar">
+            <span className="landing-show__windowdots">▪▪▪</span>
+            <span className="landing-show__windowtitle">MINDFORUM IN 20 SECONDS</span>
+            <span className="landing-show__windowstatus">● live demo</span>
+          </div>
+          {/* Raw HTML so autoplay/muted land in the SSR markup — React omits the
+              muted attribute, which breaks autoplay policies before hydration. */}
+          <div
+            dangerouslySetInnerHTML={{
+              __html:
+                '<video class="landing-demo__video" src="/demo.mp4" poster="/demo-poster.jpg" autoplay muted loop playsinline aria-label="Demo: joining a MindForum room, sending a message, and getting a streamed @ai reply"></video>',
+            }}
+          />
+        </div>
+      </section>
+
+      <FeatureShowcase />
+
+      <div className="landing-light">
+      <section id="how-it-works" className="landing-section landing-how">
+        <div className="landing-how__head">
+          <span className="landing-how__kicker">
+            <span className="landing-how__kickerdot" aria-hidden="true" />
+            HOW IT WORKS
+          </span>
+          <h2>From blank page to project brief in one session.</h2>
+        </div>
+        <div className="landing-steps">
+          <article className="landing-step-card">
+            <svg className="landing-step__icon" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="4" y="4" width="16" height="16" rx="3" />
+              <path d="M12 9v6M9 12h6" />
+            </svg>
+            <span className="landing-step__label">STEP 01</span>
+            <h3>Create a room</h3>
+            <p>Sign in, name the room, and write a short brief for the AI.</p>
+            <Link href="/dashboard" className="landing-btn landing-btn--navy landing-btn--pill">
+              Sign in to start
+            </Link>
+          </article>
+          <article className="landing-step-card">
+            <svg className="landing-step__icon" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+            </svg>
+            <span className="landing-step__label">STEP 02</span>
+            <h3>Share the link</h3>
+            <p>Colleagues join in one click with just their name — no accounts.</p>
+            <a href="#join" className="landing-btn landing-btn--navy landing-btn--pill">
+              Join a room
+            </a>
+          </article>
+          <article className="landing-step-card">
+            <svg className="landing-step__icon" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8z" />
+              <path d="M8.5 12h.01M12 12h.01M15.5 12h.01" strokeWidth="2.4" />
+            </svg>
+            <span className="landing-step__label">STEP 03</span>
+            <h3>Think out loud</h3>
+            <p>Brainstorm naturally. Pull the AI in with @ai; export a brief when done.</p>
+            <a href="#features" className="landing-btn landing-btn--navy landing-btn--pill">
+              See the features
+            </a>
+          </article>
+        </div>
+      </section>
+
+      <section id="join" className="landing-section landing-join">
+        <div className="landing-join-card">
+          <h2>Join a room</h2>
+          <p>
+            Invited by a colleague? Their link takes you straight in — or paste the room ID here.
+          </p>
+          <JoinRoomForm />
+        </div>
+      </section>
+
+      <AdminCreateCard />
+
+      <footer className="landing-footer">
+        <span>
+          Built at{" "}
+          <a
+            href="https://giesbusiness.illinois.edu"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Gies College of Business
+          </a>
+          , University of Illinois Urbana-Champaign.
+        </span>
+        <span>
+          <a
+            href="https://github.com/gies-ai-experiments/MindForum"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Open source (MIT)
+          </a>
+          {" · "}
+          <Link href="/dashboard">Creator sign-in</Link>
+        </span>
+      </footer>
+      </div>
+    </main>
+  );
 }

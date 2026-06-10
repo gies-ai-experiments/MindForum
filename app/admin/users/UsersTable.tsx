@@ -6,6 +6,7 @@ type Row = {
   id: string;
   email: string;
   displayName: string;
+  createdBy: string | null;
   disabledAt: number | null;
   tokenLastFour: string;
   tokenRotatedAt: number;
@@ -70,6 +71,7 @@ export default function UsersTable({ initialRows }: { initialRows: Row[] }) {
           id: body.creator.id,
           email: body.creator.email,
           displayName: body.creator.displayName,
+          createdBy: "cr_super_admin",
           disabledAt: null,
           tokenLastFour: body.creator.tokenLastFour,
           tokenRotatedAt: body.creator.createdAt,
@@ -263,6 +265,7 @@ export default function UsersTable({ initialRows }: { initialRows: Row[] }) {
             <tr style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>
               <th style={{ padding: 8 }}>Display name</th>
               <th style={{ padding: 8 }}>Email</th>
+              <th style={{ padding: 8 }}>Source</th>
               <th style={{ padding: 8 }}>Status</th>
               <th style={{ padding: 8, textAlign: "right" }}>Rooms</th>
               <th style={{ padding: 8 }}>Last activity</th>
@@ -272,8 +275,9 @@ export default function UsersTable({ initialRows }: { initialRows: Row[] }) {
           </thead>
           <tbody>
             {rows.map((r) => {
-              const disabled = r.disabledAt !== null;
-              return (
+                const disabled = r.disabledAt !== null;
+                  const isEntraId = r.createdBy === null;
+                  return (
                 <tr
                   key={r.id}
                   id={r.id}
@@ -284,6 +288,13 @@ export default function UsersTable({ initialRows }: { initialRows: Row[] }) {
                     <div style={{ fontSize: 11, color: "#888" }}>{r.id}</div>
                   </td>
                   <td style={{ padding: 8 }}>{r.email}</td>
+                  <td style={{ padding: 8 }}>
+                    {isEntraId ? (
+                      <span style={{ fontSize: 12, color: "#2563eb" }}>Entra ID</span>
+                    ) : (
+                      <span style={{ fontSize: 12, color: "#6b7280" }}>Admin</span>
+                    )}
+                  </td>
                   <td style={{ padding: 8 }}>
                     {disabled ? (
                       <span
@@ -318,24 +329,28 @@ export default function UsersTable({ initialRows }: { initialRows: Row[] }) {
                   <td
                     style={{
                       padding: 8,
-                      fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                      fontFamily: isEntraId
+                        ? "system-ui"
+                        : "ui-monospace, SFMono-Regular, Menlo, monospace",
                       fontSize: 12,
-                      color: "#666",
+                      color: isEntraId ? "#9ca3af" : "#666",
                     }}
-                    title={`Rotated ${relTime(r.tokenRotatedAt)}`}
+                    title={isEntraId ? undefined : `Rotated ${relTime(r.tokenRotatedAt)}`}
                   >
-                    …{r.tokenLastFour}
+                    {isEntraId ? "—" : `…${r.tokenLastFour}`}
                   </td>
                   <td style={{ padding: 8, fontSize: 12 }}>
                     <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                      <button
-                        type="button"
-                        onClick={() => rotateToken(r)}
-                        disabled={busyId === r.id}
-                        style={btn("primary")}
-                      >
-                        Rotate
-                      </button>
+                      {!isEntraId && (
+                        <button
+                          type="button"
+                          onClick={() => rotateToken(r)}
+                          disabled={busyId === r.id}
+                          style={btn("primary")}
+                        >
+                          Rotate
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => toggleDisabled(r)}

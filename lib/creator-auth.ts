@@ -96,15 +96,45 @@ async function findByToken(plaintext: string): Promise<Creator | null> {
 }
 
 /**
- * Resolve the current creator from the request cookie. Returns null if no
- * cookie, invalid token, or disabled creator. Does NOT consult ADMIN_TOKEN —
+ * Resolve the current creator from the request cookie or NextAuth session.
+ * Returns null if neither path resolves. Does NOT consult ADMIN_TOKEN —
  * super-admin uses a separate auth path.
  */
 export async function getCreator(): Promise<Creator | null> {
   const c = await cookies();
   const tok = c.get(CREATOR_COOKIE)?.value;
-  if (!tok) return null;
-  return findByToken(tok);
+  if (tok) {
+    const creator = await findByToken(tok);
+    if (creator) return creator;
+  }
+
+  if (process.env.AZURE_AD_CLIENT_ID) {
+    try {
+      const { auth } = await import("./auth-config");
+      const session = await auth();
+      if (session?.user?.email) {
+        return findByEmail(session.user.email);
+      }
+    } catch {
+      // Not in a request context (build time, etc.)
+    }
+  }
+
+  return null;
+}
+
+async function findByEmail(email: string): Promise<Creator | null> {
+  if (!email) return null;
+  const { rows } = await query<CreatorRow>(
+    `SELECT id, email, display_name, is_super_admin, disabled_at
+       FROM allowlisted_creators
+      WHERE lower(email) = $1
+      LIMIT 1`,
+    [email.toLowerCase()]
+  );
+  const r = rows[0];
+  if (!r || r.disabled_at) return null;
+  return toCreator(r);
 }
 
 /**
