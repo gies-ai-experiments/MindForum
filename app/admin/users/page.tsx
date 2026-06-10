@@ -78,6 +78,7 @@ export default async function AdminUsersPage({
           id: r.id,
           email: r.email,
           displayName: r.displayName,
+          createdBy: r.createdBy,
           disabledAt: r.disabledAt,
           tokenLastFour: r.tokenLastFour,
           tokenRotatedAt: r.tokenRotatedAt,
