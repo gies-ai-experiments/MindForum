@@ -19,7 +19,7 @@ export default function SignInForm({
             ? "Your account has been disabled. Contact your admin."
             : null;
 
-  const azureEnabled = isAzureConfigured;
+  const azureEnabled = isAzureConfigured();
 
   return (
     <main
