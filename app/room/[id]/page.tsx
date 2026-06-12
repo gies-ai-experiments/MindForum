@@ -18,6 +18,9 @@ import {
 } from "@/lib/notify";
 import { PollLaunchModal } from "./PollLaunchModal";
 import { PollCard } from "./PollCard";
+import FeatureTour from "@/app/components/FeatureTour";
+import TourReplayButton from "@/app/components/TourReplayButton";
+import { ROOM_TOUR_STEPS, TOUR_KEYS } from "@/lib/tour-steps";
 
 type Participant = { id: string; name: string; email: string; joinedAt: number };
 type SourceType = "uploaded" | "github_repo" | "web_url";
@@ -157,6 +160,8 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
   const prefsRef = useRef(prefs);
   const participantIdRef = useRef(participantId);
   const messagesRef = useRef<Msg[]>([]);
+  // Saves the composer text while the tour's "/poll" step demonstrates the command.
+  const tourSavedDraftRef = useRef("");
   useEffect(() => {
     nameRef.current = name;
   }, [name]);
@@ -872,6 +877,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
       <div style={{ position: "relative" }}>
         <button
           type="button"
+          data-tour="attach"
           disabled={busy || state.archived}
           onClick={() => setAttachMenuOpen((open) => !open)}
           style={{
@@ -925,6 +931,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
       </div>
       <div>
         <button
+          data-tour="brief"
           onClick={() => {
             generateBrief();
             setFilesDrawerOpen(false);
@@ -963,6 +970,24 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
         minHeight: 0,
       }}
     >
+      <FeatureTour
+        steps={ROOM_TOUR_STEPS}
+        storageKey={TOUR_KEYS.room}
+        autoStart
+        startWhen={joined && !catchupOpen}
+        hooks={{
+          poll: {
+            // Show "/poll" in the composer (triggers the live /poll highlight) while
+            // the popover explains it; restore whatever was there when the step leaves.
+            onShow: () =>
+              setDraft((d) => {
+                tourSavedDraftRef.current = d;
+                return "/poll";
+              }),
+            onHide: () => setDraft(() => tourSavedDraftRef.current),
+          },
+        }}
+      />
       {showPollModal && (
         <PollLaunchModal
           roomId={id}
@@ -1170,6 +1195,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
           <button onClick={copyLink} style={{ ...btnSecondary(), background: linkCopied ? "#166534" : "var(--orange)" }}>
             {linkCopied ? "Link copied ✓" : "Copy link"}
           </button>
+          <TourReplayButton surface="room" className="room-tour-btn" />
           {settingsOpen && (
             <NotifySettingsPopover
               prefs={prefs}
@@ -1209,7 +1235,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
         }}
       >
         {!isNarrow && (
-          <aside style={{ ...col(), display: "grid", gridTemplateRows: "auto 1fr", minHeight: 0 }}>
+          <aside data-tour="participants" style={{ ...col(), display: "grid", gridTemplateRows: "auto 1fr", minHeight: 0 }}>
             <h3 style={colTitle()}>Participants</h3>
             {participantsListNode}
           </aside>
@@ -1324,6 +1350,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
                       {renderInputMentions(draft)}
                     </div>
                     <TextareaAutosize
+                      data-tour="composer"
                       value={draft}
                       onChange={(e) => setDraft(e.target.value)}
                       onKeyDown={(e) => {

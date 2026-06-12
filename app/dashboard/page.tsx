@@ -8,6 +8,9 @@ import SignInForm from "./SignInForm";
 import SignOutButton from "./SignOutButton";
 import CreateRoomForm from "./CreateRoomForm";
 import PendingInvitations from "./PendingInvitations";
+import FeatureTour from "@/app/components/FeatureTour";
+import TourReplayButton from "@/app/components/TourReplayButton";
+import { DASHBOARD_TOUR_STEPS, TOUR_KEYS } from "@/lib/tour-steps";
 
 export const dynamic = "force-dynamic";
 
@@ -221,13 +224,17 @@ export default async function DashboardPage({
           </div>
           <div className="dash-topbar__right">
             <span className="dash-topbar__hello">Welcome back, {creator.displayName.split(/\s+/)[0]}</span>
+            <TourReplayButton surface="dashboard" className="dash-tour-btn" />
             <span className="dash-topbar__avatar">{initials(creator.displayName)}</span>
           </div>
         </header>
 
+        <FeatureTour steps={DASHBOARD_TOUR_STEPS} storageKey={TOUR_KEYS.dashboard} autoStart />
+
+
         <div className="dash-content">
           {/* ---- Stat cards ---- */}
-          <section className="dash-cards" id="overview">
+          <section className="dash-cards" id="overview" data-tour="stats">
             <article className="dash-card">
               <div className="dash-card__top">
                 <span className="dash-card__label">Rooms</span>
@@ -282,7 +289,7 @@ export default async function DashboardPage({
 
           {/* ---- Rooms table + ranking ---- */}
           <section className="dash-row">
-            <div className="dash-panel" id="rooms">
+            <div className="dash-panel" id="rooms" data-tour="rooms">
               <div className="dash-panel__head">
                 <div>
                   <span className="dash-panel__title">Your rooms</span>
@@ -348,7 +355,7 @@ export default async function DashboardPage({
               )}
             </div>
 
-            <div className="dash-panel">
+            <div className="dash-panel" data-tour="ranking">
               <div className="dash-panel__head">
                 <span className="dash-panel__title">Most active<span>last 7 days</span></span>
               </div>
@@ -378,7 +385,7 @@ export default async function DashboardPage({
           {pendingCount > 0 && <PendingInvitations />}
 
           {/* ---- Create room ---- */}
-          <section className="dash-panel dash-create-card" id="create">
+          <section className="dash-panel dash-create-card" id="create" data-tour="create">
             <div className="dash-panel__head">
               <span className="dash-panel__title">Create a room<span>name it, brief the AI, attach context</span></span>
             </div>
