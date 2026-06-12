@@ -322,7 +322,7 @@ export default async function DashboardPage({
                         return (
                           <tr key={r.id}>
                             <td>
-                              <a className="dash-roomname" href={`/dashboard/rooms/${r.id}/settings`}>{r.name}</a>
+                              <a className="dash-roomname" href={url}>{r.name}</a>
                               <div className="dash-roomid">{r.id}</div>
                             </td>
                             <td>
@@ -361,7 +361,7 @@ export default async function DashboardPage({
                       <li key={r.id} className={`dash-rank__row${i < 3 ? " dash-rank__row--top" : ""}`}>
                         <span className="dash-rank__badge">{i + 1}</span>
                         <span className="dash-rank__main">
-                          <a className="dash-rank__name" href={`/dashboard/rooms/${r.id}/settings`}>{r.name}</a>
+                          <a className="dash-rank__name" href={`/room/${r.id}`}>{r.name}</a>
                           <span className="dash-rank__track">
                             <span className="dash-rank__fill" style={{ width: `${Math.max(4, (r.msgs7d / rankMax) * 100)}%` }} />
                           </span>
