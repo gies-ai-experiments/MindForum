@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "npm run migrate && next start",
     "migrate": "node scripts/migrate.mjs",
     "test": "node --import tsx --test lib/*.test.mjs"
   },
