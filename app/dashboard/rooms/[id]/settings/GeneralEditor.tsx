@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { MAX_SYSTEM_PROMPT_CHARS } from "@/lib/limits";
+import DashboardAttachButton from "@/app/dashboard/DashboardAttachButton";
 
 const MAX_NAME = 100;
 const MAX_PROMPT = MAX_SYSTEM_PROMPT_CHARS;
@@ -74,6 +75,15 @@ export default function GeneralEditor({
           }}
         />
       </label>
+
+      {!archived && (
+        <div style={{ display: "grid", gap: 4, justifyItems: "start" }}>
+          <span style={{ fontSize: 13, color: "#374151" }}>
+            Context files <span style={{ color: "#888" }}>(upload, GitHub repo, or URL)</span>
+          </span>
+          <DashboardAttachButton roomId={roomId} archived={archived} />
+        </div>
+      )}
 
       <label style={{ display: "grid", gap: 4 }}>
         <span style={{ fontSize: 13, color: "#374151" }}>

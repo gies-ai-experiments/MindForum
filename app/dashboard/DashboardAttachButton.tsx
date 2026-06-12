@@ -39,7 +39,9 @@ export default function DashboardAttachButton({
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
         setErr(body.error ?? `HTTP ${res.status}`);
+        return;
       }
+      window.location.reload();
     } finally {
       setBusy(false);
     }
@@ -98,6 +100,7 @@ export default function DashboardAttachButton({
       setGithubInclude("");
       setGithubExclude("");
       setGithubPreview(null);
+      window.location.reload();
     } finally {
       setBusy(false);
     }
@@ -121,6 +124,7 @@ export default function DashboardAttachButton({
       setUrlOpen(false);
       setUrlSource("");
       setUrlInstruction("");
+      window.location.reload();
     } finally {
       setBusy(false);
     }
@@ -160,7 +164,7 @@ export default function DashboardAttachButton({
             style={{
               position: "absolute",
               top: "calc(100% + 4px)",
-              right: 0,
+              left: 0,
               background: "white",
               border: "1px solid var(--border)",
               borderRadius: 8,
@@ -221,7 +225,7 @@ export default function DashboardAttachButton({
           style={{
             position: "absolute",
             top: "calc(100% + 4px)",
-            right: 0,
+            left: 0,
             background: "#fef2f2",
             color: "#991b1b",
             padding: "6px 10px",
