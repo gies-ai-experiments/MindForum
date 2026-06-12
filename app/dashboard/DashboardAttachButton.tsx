@@ -2,12 +2,21 @@
 
 import { useState } from "react";
 
+export type PendingAttachment =
+  | { kind: "file"; file: File }
+  | { kind: "github"; url: string; include: string; exclude: string }
+  | { kind: "url"; url: string; instruction: string };
+
 export default function DashboardAttachButton({
   roomId,
   archived,
+  onQueue,
 }: {
-  roomId: string;
+  roomId?: string;
   archived: boolean;
+  // When set, picked items are queued via this callback instead of POSTed —
+  // used by CreateRoomForm, where the room doesn't exist yet.
+  onQueue?: (item: PendingAttachment) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -27,6 +36,10 @@ export default function DashboardAttachButton({
   if (archived) return null;
 
   async function upload(file: File) {
+    if (onQueue) {
+      onQueue({ kind: "file", file });
+      return;
+    }
     setBusy(true);
     setErr(null);
     try {
@@ -75,6 +88,23 @@ export default function DashboardAttachButton({
 
   async function attachGitHub(e: React.FormEvent) {
     e.preventDefault();
+    // The modal can render inside a parent <form> (CreateRoomForm) — don't let
+    // this submit bubble up and trigger it.
+    e.stopPropagation();
+    if (onQueue) {
+      onQueue({
+        kind: "github",
+        url: githubUrl,
+        include: githubInclude,
+        exclude: githubExclude,
+      });
+      setGithubOpen(false);
+      setGithubUrl("");
+      setGithubInclude("");
+      setGithubExclude("");
+      setGithubPreview(null);
+      return;
+    }
     setBusy(true);
     setErr(null);
     try {
@@ -108,6 +138,14 @@ export default function DashboardAttachButton({
 
   async function attachUrl(e: React.FormEvent) {
     e.preventDefault();
+    e.stopPropagation();
+    if (onQueue) {
+      onQueue({ kind: "url", url: urlSource, instruction: urlInstruction });
+      setUrlOpen(false);
+      setUrlSource("");
+      setUrlInstruction("");
+      return;
+    }
     setBusy(true);
     setErr(null);
     try {
@@ -299,14 +337,16 @@ export default function DashboardAttachButton({
                 justifyContent: "flex-end",
               }}
             >
-              <button
-                type="button"
-                disabled={busy || !githubUrl.trim()}
-                onClick={() => void previewGitHub()}
-                style={btnSecondary()}
-              >
-                Preview
-              </button>
+              {!onQueue && (
+                <button
+                  type="button"
+                  disabled={busy || !githubUrl.trim()}
+                  onClick={() => void previewGitHub()}
+                  style={btnSecondary()}
+                >
+                  Preview
+                </button>
+              )}
               <button
                 type="submit"
                 disabled={busy || !githubUrl.trim()}
