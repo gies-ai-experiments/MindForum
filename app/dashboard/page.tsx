@@ -6,7 +6,6 @@ import { adminListRoomsWithActivity } from "@/lib/store";
 import SignInForm from "./SignInForm";
 import SignOutButton from "./SignOutButton";
 import CreateRoomForm from "./CreateRoomForm";
-import CopyRoomLink from "./CopyRoomLink";
 
 export const dynamic = "force-dynamic";
 
@@ -210,7 +209,9 @@ export default async function DashboardPage({
                       {r.fileCount}
                     </td>
                     <td style={{ padding: 8 }}>
-                      <CopyRoomLink url={url} />
+                      <a href={url} target="_blank" rel="noreferrer">
+                        Open ↗
+                      </a>
                     </td>
                   </tr>
                 );

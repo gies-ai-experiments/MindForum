@@ -129,6 +129,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
   const [unread, setUnread] = useState(0);
   const [perm, setPerm] = useState<NotificationPermission | "unsupported">("default");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
   const [previewFileId, setPreviewFileId] = useState<string | null>(null);
   const [previewData, setPreviewData] = useState<FilePreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -728,6 +729,8 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
 
   function copyLink() {
     navigator.clipboard.writeText(window.location.href);
+    setLinkCopied(true);
+    setTimeout(() => setLinkCopied(false), 2000);
   }
 
   if (!joined) {
@@ -1164,8 +1167,8 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
               </span>
             )}
           </button>
-          <button onClick={copyLink} style={{ ...btnSecondary(), background: "var(--orange)" }}>
-            Copy link
+          <button onClick={copyLink} style={{ ...btnSecondary(), background: linkCopied ? "#166534" : "var(--orange)" }}>
+            {linkCopied ? "Link copied ✓" : "Copy link"}
           </button>
           {settingsOpen && (
             <NotifySettingsPopover
