@@ -9,6 +9,7 @@ import { checkRate, clientIp, rateLimited } from "@/lib/ratelimit";
 import {
   assertActiveRoom,
   getActor,
+  getCreator,
   HttpError,
   httpErrorResponse,
 } from "@/lib/creator-auth";
@@ -70,8 +71,17 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   }
 
   const body = await req.json().catch(() => ({}));
-  const name = typeof body.name === "string" ? body.name.trim().slice(0, 80) : "";
-  const email = typeof body.email === "string" ? body.email.trim().slice(0, 120) : "";
+  let name = typeof body.name === "string" ? body.name.trim().slice(0, 80) : "";
+  let email = typeof body.email === "string" ? body.email.trim().slice(0, 120) : "";
+
+  // If the user is signed in as a creator, use their identity automatically.
+  // This lets creators join rooms without re-typing name + email.
+  const creator = await getCreator();
+  if (creator) {
+    name = name || creator.displayName;
+    email = email || creator.email;
+  }
+
   if (!name || !email) {
     return NextResponse.json({ error: "name_and_email_required" }, { status: 400 });
   }

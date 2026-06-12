@@ -229,6 +229,47 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
     } catch {}
   }, []);
 
+  // Auto-join if signed in as a creator — skip the name/email prompt.
+  useEffect(() => {
+    let cancelled = false;
+    async function autoJoin() {
+      setJoining(true);
+      try {
+        const res = await fetch(`/api/room/${id}/join`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: "{}",
+        });
+        if (cancelled) return;
+        if (!res.ok) return;
+        const data: {
+          participantId: string | null;
+          readOnly?: boolean;
+          catchupHint?: { should: false } | { should: true; since: number | null };
+        } = await res.json().catch(() => ({ participantId: null }));
+        if (data.participantId) {
+          setParticipantId(data.participantId);
+          setJoined(true);
+          if (data.catchupHint?.should) {
+            setCatchupOpen(true);
+            setCatchupLoading(true);
+            fetch(`/api/room/${id}/catchup`)
+              .then((r) => (r.ok ? r.json() : Promise.reject(r)))
+              .then((cd: CatchupData) => setCatchupData(cd))
+              .catch(() => setCatchupData({ kind: "error" }))
+              .finally(() => setCatchupLoading(false));
+          }
+        }
+      } catch {
+        // no creator cookie — show the normal join form
+      } finally {
+        if (!cancelled) setJoining(false);
+      }
+    }
+    autoJoin();
+    return () => { cancelled = true; };
+  }, [id]);
+
   async function join(e: React.FormEvent) {
     e.preventDefault();
     const trimmedName = name.trim();
