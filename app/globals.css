@@ -655,7 +655,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: 
 .landing-how__head {
   text-align: right;
   margin-bottom: 48px;
-  max-width: 760px;
+  max-width: 640px;
   margin-left: auto;
   margin-right: 0;
 }
@@ -676,7 +676,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: 
   background: var(--orange);
 }
 .landing-how h2 {
-  max-width: 760px;
+  max-width: 640px;
   margin: 0 0 0 auto;
   font-size: clamp(26px, 3.4vw, 40px);
   line-height: 1.15;
@@ -684,7 +684,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: 
   text-align: right;
 }
 .landing-steps {
-  max-width: 1200px;
+  max-width: 880px;
   margin: 0 0 0 auto;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -741,7 +741,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: 
   padding: 0 24px 72px;
 }
 .landing-join-card {
-  max-width: 560px;
+  max-width: 480px;
   margin: 0 0 0 auto;
   text-align: right;
   background: var(--card);
