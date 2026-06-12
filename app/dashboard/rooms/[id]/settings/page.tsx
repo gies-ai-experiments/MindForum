@@ -6,6 +6,7 @@ import GeneralEditor from "./GeneralEditor";
 import ArchiveControl from "./ArchiveControl";
 import FilesPanel from "./FilesPanel";
 import ParticipantsPanel from "./ParticipantsPanel";
+import InvitationsPanel from "./InvitationsPanel";
 import ActivityFeed from "./ActivityFeed";
 
 export const dynamic = "force-dynamic";
@@ -113,6 +114,11 @@ export default async function RoomSettingsPage({
           participants={room.participants}
           archived={archived}
         />
+      </section>
+
+      <section style={{ marginBottom: 32 }}>
+        <h2 style={{ fontSize: 16, marginBottom: 8 }}>Invitations</h2>
+        <InvitationsPanel roomId={room.id} archived={archived} />
       </section>
 
       <section>

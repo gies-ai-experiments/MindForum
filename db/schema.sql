@@ -247,3 +247,24 @@ ALTER TABLE messages   ADD COLUMN IF NOT EXISTS grounding_files JSONB;
 
 INSERT INTO schema_migrations (version) VALUES (12)
   ON CONFLICT (version) DO NOTHING;
+
+-- v13: room invitations. Owners invite allowlisted_creators to discover rooms
+-- in their dashboard sidebar. Pending → accepted (room shows in sidebar) or
+-- declined. One invitation per email per room (unique index).
+CREATE TABLE IF NOT EXISTS room_invitations (
+  id            TEXT PRIMARY KEY,
+  room_id       TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+  inviter_id    TEXT NOT NULL,
+  invitee_email TEXT NOT NULL,
+  invitee_name  TEXT NOT NULL,
+  status        TEXT NOT NULL CHECK (status IN ('pending','accepted','declined')),
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  accepted_at   TIMESTAMPTZ,
+  declined_at   TIMESTAMPTZ
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS room_invitations_room_email_uniq
+  ON room_invitations (room_id, lower(invitee_email));
+
+INSERT INTO schema_migrations (version) VALUES (13)
+  ON CONFLICT (version) DO NOTHING;
