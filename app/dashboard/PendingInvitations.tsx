@@ -23,7 +23,7 @@ export default function PendingInvitations() {
       .catch(() => {});
   }, []);
 
-  async function respond(invId: string, action: "accept" | "decline") {
+  async function respond(invId: string, roomId: string, action: "accept" | "decline") {
     setBusyId(invId);
     setErr(null);
     try {
@@ -35,7 +35,7 @@ export default function PendingInvitations() {
       if (res.ok) {
         setInvitations((cur) => cur.filter((i) => i.id !== invId));
         if (action === "accept") {
-          window.location.reload();
+          window.location.href = `/room/${roomId}`;
         }
       } else {
         const body = await res.json().catch(() => ({}));
@@ -95,7 +95,7 @@ export default function PendingInvitations() {
                 <td style={{ textAlign: "right" }}>
                   <button
                     type="button"
-                    onClick={() => respond(inv.id, "accept")}
+                    onClick={() => respond(inv.id, inv.roomId, "accept")}
                     disabled={busyId === inv.id}
                     style={{
                       padding: "4px 12px",
@@ -113,7 +113,7 @@ export default function PendingInvitations() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => respond(inv.id, "decline")}
+                    onClick={() => respond(inv.id, inv.roomId, "decline")}
                     disabled={busyId === inv.id}
                     style={{
                       padding: "4px 12px",
