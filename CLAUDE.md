@@ -13,6 +13,8 @@ Shared AI brainstorming room app for small faculty groups. Next.js 15 + SSE + Po
 | VPS (rollback) | `/root/repos/mindforum` (ssh alias `vps`), PM2 `mindforum` port 3006, Postgres role/db `mindforum` localhost:5432. Still running + still auto-deployed; rollback = flip CF record back to proxied `A → 76.13.122.44` (null worker route left in place for this). |
 | Repo | `gies-ai-experiments/MindForum` (public, MIT; deploy key `mindforum_deploy` on VPS) |
 
+**Azure rule**: ANY task involving database migrations, cloud deployment, App Service configuration, PostgreSQL operations, DNS, or Entra ID auth → **ALWAYS consult the Azure skills first**: `illinois-azure-cli-deploy` (commands), `illinois-azure-app-migration` (topology/planning), `illinois-azure-governance` (guardrails). Never run `az` commands or touch Azure resources without loading these skills.
+
 ## Required env vars
 
 `OPENAI_API_KEY` · `POSTGRES_URL` · `ADMIN_TOKEN` (for `/api/admin/seed`) · optional `OPENAI_MODEL` (default `gpt-5.4`).
