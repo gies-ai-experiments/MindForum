@@ -20,7 +20,8 @@ export async function POST(
       return NextResponse.json({ error: "invalid_action" }, { status: 400 });
     }
 
-    const result = await updateInvitationStatus(id, creator.email, action);
+    const status = action === "accept" ? "accepted" : "declined";
+    const result = await updateInvitationStatus(id, creator.email, status);
     if (!result) {
       return NextResponse.json({ error: "not_found" }, { status: 404 });
     }
