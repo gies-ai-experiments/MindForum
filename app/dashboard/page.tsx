@@ -6,6 +6,7 @@ import { adminListRoomsWithActivity } from "@/lib/store";
 import SignInForm from "./SignInForm";
 import SignOutButton from "./SignOutButton";
 import CreateRoomForm from "./CreateRoomForm";
+import DashboardAttachButton from "./DashboardAttachButton";
 
 export const dynamic = "force-dynamic";
 
@@ -153,6 +154,7 @@ export default async function DashboardPage({
                 <th style={{ padding: 8, textAlign: "right" }}>7d msgs</th>
                 <th style={{ padding: 8, textAlign: "right" }}>People</th>
                 <th style={{ padding: 8, textAlign: "right" }}>Files</th>
+                <th style={{ padding: 8 }}>Attach</th>
                 <th style={{ padding: 8 }}>Link</th>
               </tr>
             </thead>
@@ -207,6 +209,12 @@ export default async function DashboardPage({
                     </td>
                     <td style={{ padding: 8, textAlign: "right" }}>
                       {r.fileCount}
+                    </td>
+                    <td style={{ padding: 8 }}>
+                      <DashboardAttachButton
+                        roomId={r.id}
+                        archived={isArchived}
+                      />
                     </td>
                     <td style={{ padding: 8 }}>
                       <a href={url} target="_blank" rel="noreferrer">
