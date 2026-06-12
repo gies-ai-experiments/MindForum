@@ -163,8 +163,11 @@ export default async function DashboardPage({
                 return (
                   <tr key={r.id} style={{ borderBottom: "1px solid #f0f0f0" }}>
                     <td style={{ padding: 8 }}>
-                      <a href={`/dashboard/rooms/${r.id}/settings`}>{r.name}</a>
-                      <div style={{ fontSize: 11, color: "#888" }}>{r.id}</div>
+                      <a href={url} target="_blank" rel="noreferrer">{r.name}</a>
+                      <div style={{ fontSize: 11, color: "#888" }}>
+                        {r.id}{" "}
+                        <a href={`/dashboard/rooms/${r.id}/settings`} style={{ color: "#888" }}>settings</a>
+                      </div>
                     </td>
                     <td style={{ padding: 8 }}>
                       {isArchived ? (
