@@ -63,7 +63,7 @@ export default function DashboardAttachButton({
   async function previewGitHub() {
     setBusy(true);
     try {
-      const res = await fetch(`/api/room/${roomId}/context/github/preview`, {
+      const res = await fetch(`/api/dashboard/room/${roomId}/context/github/preview`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({

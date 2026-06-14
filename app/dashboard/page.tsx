@@ -345,7 +345,18 @@ export default async function DashboardPage({
                             <td className="num">{r.msgs7d}</td>
                             <td className="num">{r.totalParticipants}</td>
                             <td className="num">{r.fileCount}</td>
-                            <td><a className="dash-open" href={url} target="_blank" rel="noreferrer">Open ↗</a></td>
+                            <td>
+                              {r.relationship !== "invited" && (
+                                <a
+                                  className="dash-open"
+                                  href={`/dashboard/rooms/${r.id}/settings`}
+                                  style={{ marginRight: 14 }}
+                                >
+                                  Settings
+                                </a>
+                              )}
+                              <a className="dash-open" href={url} target="_blank" rel="noreferrer">Open ↗</a>
+                            </td>
                           </tr>
                         );
                       })}

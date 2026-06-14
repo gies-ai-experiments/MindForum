@@ -67,16 +67,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           return `/dashboard?err=disabled`;
         }
 
-        const plaintext = generateToken();
-        const hash = hashToken(plaintext);
-        const lastFour = plaintext.slice(-4);
-        await query(
-          `UPDATE allowlisted_creators
-              SET token_hash = $1, token_last_four = $2, token_rotated_at = NOW()
-            WHERE id = $3`,
-          [hash, lastFour, existing.id]
-        );
-
+        // Do NOT rotate the creator's token here. Entra sessions authenticate
+        // by email lookup (getCreator → findByEmail), not by the token, so
+        // rotating would silently invalidate the user's pasted-token fallback
+        // (and any active token-cookie session) for no benefit — the new
+        // plaintext is never surfaced to anyone.
         (profile as Record<string, unknown>).__creatorId = existing.id;
         (profile as Record<string, unknown>).__creatorEmail = email;
         return true;

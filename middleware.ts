@@ -36,8 +36,13 @@ export function middleware(req: NextRequest) {
   if (hasCreatorCookie) return NextResponse.next();
 
   // Check for NextAuth session cookie (Entra ID flow).
-  // Cookie name varies by environment: __Secure- prefix in production.
+  // Auth.js v5 (next-auth@5) renamed the default cookie prefix from
+  // `next-auth` → `authjs`, and adds the `__Secure-` prefix when the
+  // deployment is HTTPS (production). Check the v5 names first, then the
+  // legacy v4 names so the gate keeps working across versions.
   const hasNextAuthCookie =
+    req.cookies.get("__Secure-authjs.session-token")?.value ||
+    req.cookies.get("authjs.session-token")?.value ||
     req.cookies.get("__Secure-next-auth.session-token")?.value ||
     req.cookies.get("next-auth.session-token")?.value;
   if (hasNextAuthCookie) return NextResponse.next();
