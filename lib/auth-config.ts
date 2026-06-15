@@ -41,6 +41,11 @@ function getProviders() {
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: getProviders(),
   secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET,
+  // App Service sits behind a trusted reverse proxy on a known custom host.
+  // Without this, Auth.js v5 rejects /api/auth/* with `UntrustedHost` in
+  // production unless AUTH_URL / AUTH_TRUST_HOST is also set — so the Illinois
+  // sign-in button would render but the OAuth flow would 500 before starting.
+  trustHost: true,
   callbacks: {
     async signIn({ profile }) {
       if (!profile?.email) return false;

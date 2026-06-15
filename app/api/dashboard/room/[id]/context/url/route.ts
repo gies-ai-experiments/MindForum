@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ATTACH_RATE } from "@/lib/context-sources";
 import { attachRoomFile } from "@/lib/attach-room-file";
 import { assertActiveRoom, httpErrorResponse, requireRoomOwner } from "@/lib/creator-auth";
+import { roomIsClosed } from "@/lib/room-state";
 import { ingestUrl } from "@/lib/ingest/url";
 import { checkRate, clientIp, rateLimited } from "@/lib/ratelimit";
 import type { Participant } from "@/lib/store";
@@ -27,6 +28,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   } catch (err) {
     return httpErrorResponse(err);
   }
+  // A closed room is locked to new content even for the owner from settings.
+  if (await roomIsClosed(id)) return NextResponse.json({ error: "room_closed" }, { status: 410 });
 
   const body = await req.json().catch(() => ({}));
   const url = typeof body.url === "string" ? body.url : "";

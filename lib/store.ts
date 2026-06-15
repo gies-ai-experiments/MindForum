@@ -1299,10 +1299,20 @@ export async function updateInvitationStatus(
   status: "accepted" | "declined"
 ): Promise<RoomInvitation | null> {
   const timestampCol = status === "accepted" ? "accepted_at" : "declined_at";
+  // Block accepting an invite to an archived room — the invitee would be
+  // redirected to /room/<id> and hit the archived-room 410 (non-owners get no
+  // bypass). Declines stay allowed so users can clear a stale invitation.
+  const archivedGuard =
+    status === "accepted"
+      ? `AND EXISTS (SELECT 1 FROM rooms r
+                       WHERE r.id = room_invitations.room_id
+                         AND r.archived_at IS NULL)`
+      : "";
   const { rows } = await query<InvitationRow>(
     `UPDATE room_invitations
      SET status = $3, ${timestampCol} = NOW()
      WHERE id = $1 AND lower(invitee_email) = lower($2) AND status = 'pending'
+       ${archivedGuard}
      RETURNING id, room_id, '' AS room_name, inviter_id, '' AS inviter_name,
                invitee_email, invitee_name, status, created_at, accepted_at, declined_at`,
     [id, email, status]
