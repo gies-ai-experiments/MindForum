@@ -56,12 +56,19 @@ jobs:
           fi
           cp -R .next/static/. azure-package/.next/static/
           if [ -d public ]; then cp -R public azure-package/public; fi
+          # Zip the package before upload. actions/upload-artifact@v4 excludes
+          # hidden files by default, which silently drops the .next/ build dir
+          # (a dot-directory) when the package is uploaded as a folder — the deploy
+          # then ships server.js but a stale .next, so prod serves the old build.
+          # Zipping (mirrors the staging workflow) keeps .next/ inside the archive.
+          cd azure-package
+          zip -r ../azure-package.zip .
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
           name: node-app
-          path: azure-package
+          path: azure-package.zip
 
   deploy:
     runs-on: ubuntu-latest
@@ -74,7 +81,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: node-app
-          path: azure-package
+          path: .
 
       - name: Deploy to Azure Web App
         id: deploy-to-webapp
@@ -82,5 +89,5 @@ jobs:
         with:
           app-name: mindforum
           slot-name: Production
-          package: azure-package
+          package: azure-package.zip
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_770B002F327B4D6A824B31DDF8168E8C }}
