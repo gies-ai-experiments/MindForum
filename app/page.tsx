@@ -9,7 +9,7 @@ export const metadata = {
 
 const TRUSTED: { name: string; href?: string }[] = [
   { name: "Gies College of Business", href: "https://giesbusiness.illinois.edu" },
-  { name: "Disruption Lab" },
+  { name: "Disruption Lab", href: "https://giesgroups.illinois.edu/disruptionlab" },
   { name: "MSBAi" },
   { name: "AI Experiments" },
   { name: "Faculty cohorts" },
@@ -89,7 +89,7 @@ export default function LandingPage() {
         </div>
 
         <div className="landing-trusted">
-          <p>Trusted by teams at</p>
+          <p>Supported by</p>
           <div className="landing-trusted__marquee">
             <div className="landing-trusted__track">
               <TrustedRow />
@@ -191,6 +191,16 @@ export default function LandingPage() {
             Gies College of Business
           </a>
           , University of Illinois Urbana-Champaign.
+          <br />
+          Supported by{" "}
+          <a
+            href="https://giesgroups.illinois.edu/disruptionlab"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Disruption Lab
+          </a>
+          .
         </span>
         <span>
           <a

@@ -55,6 +55,10 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: 
 .landing-nav__links {
   display: flex;
   gap: 28px;
+  /* Push the nav links to the right so they sit close to the Sign in button,
+     leaving the wordmark alone on the left. */
+  margin-left: auto;
+  margin-right: 32px;
 }
 .landing-nav__links a {
   color: rgba(255, 255, 255, 0.72);
@@ -219,8 +223,9 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: 
 }
 .landing-trusted p {
   margin: 0 0 20px;
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.45);
+  font-size: 20px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.6);
   letter-spacing: 0.02em;
 }
 .landing-trusted__marquee {
@@ -650,7 +655,8 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: 
   color: var(--text);
   max-width: none;
   padding: 88px 24px;
-  background: var(--card);
+  /* Navy brand color to match the hero/theme; white cards (below) sit on top. */
+  background: var(--navy);
 }
 .landing-how__head {
   text-align: center;
@@ -663,7 +669,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: 
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
   letter-spacing: 0.12em;
-  color: var(--muted);
+  color: rgba(255, 255, 255, 0.7);
   margin-bottom: 16px;
 }
 .landing-how__kickerdot {
@@ -677,7 +683,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: 
   margin: 0 auto;
   font-size: clamp(26px, 3.4vw, 40px);
   line-height: 1.15;
-  color: var(--navy);
+  color: #FFFFFF;
   text-align: center;
 }
 .landing-steps {
@@ -688,7 +694,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: 
   gap: 20px;
 }
 .landing-step-card {
-  background: #F2F3F5;
+  background: #FFFFFF;
   border: 1px solid transparent;
   border-radius: 22px;
   padding: 32px 28px;
@@ -735,7 +741,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: 
 
 .landing-join {
   max-width: none;
-  padding: 0 24px 72px;
+  padding: 48px 24px 72px;
 }
 .landing-join-card {
   max-width: 560px;
