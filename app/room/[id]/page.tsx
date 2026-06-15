@@ -233,6 +233,19 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
   useEffect(() => {
     let cancelled = false;
     async function autoJoin() {
+      // Probe the (non-rate-limited) creator endpoint FIRST. Anonymous
+      // visitors must not reach the /join POST below: that bucket is 10/min
+      // per IP, so on a shared IP (a roomful of faculty) the empty-body probe
+      // would burn join attempts and 429 the real joins. `/api/creator/me`
+      // resolves the creator cookie or Entra session without spending quota.
+      try {
+        const me = await fetch(`/api/creator/me`);
+        if (cancelled) return;
+        if (!me.ok) return; // not a creator — show the normal join form
+      } catch {
+        return; // network error — fall back to the normal join form
+      }
+
       setJoining(true);
       try {
         const res = await fetch(`/api/room/${id}/join`, {
@@ -247,8 +260,12 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
           readOnly?: boolean;
           catchupHint?: { should: false } | { should: true; since: number | null };
         } = await res.json().catch(() => ({ participantId: null }));
-        if (data.participantId) {
-          setParticipantId(data.participantId);
+        // A creator opening an archived room they own gets a read-only
+        // handshake with participantId === null; treat that as joined too
+        // (mirrors the manual join path) so they see the read-only room
+        // instead of being stranded on the join form.
+        if (data.participantId || data.readOnly) {
+          setParticipantId(data.participantId ?? "");
           setJoined(true);
           if (data.catchupHint?.should) {
             setCatchupOpen(true);

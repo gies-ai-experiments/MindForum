@@ -44,6 +44,7 @@ export default function SignInForm({
 
       {azureEnabled && (
         <form action={signInAzure} style={{ marginBottom: 16 }}>
+          {next && <input type="hidden" name="next" value={next} />}
           <button
             type="submit"
             style={{

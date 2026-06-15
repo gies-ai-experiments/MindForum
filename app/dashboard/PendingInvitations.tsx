@@ -81,7 +81,7 @@ export default function PendingInvitations() {
                 <td>
                   <a
                     className="dash-roomname"
-                    href={`/dashboard/rooms/${inv.roomId}/settings`}
+                    href={`/room/${inv.roomId}`}
                   >
                     {inv.roomName}
                   </a>

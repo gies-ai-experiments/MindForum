@@ -1320,10 +1320,14 @@ export async function updateInvitationStatus(
   });
 }
 
-export async function cancelInvitation(id: string): Promise<boolean> {
+export async function cancelInvitation(id: string, roomId: string): Promise<boolean> {
+  // Scope the delete to the room the caller proved ownership of. Without the
+  // room_id predicate, an owner of any room could cancel another room's
+  // pending invitation by guessing its id (the route only authorizes the
+  // path room).
   const { rowCount } = await query(
-    `DELETE FROM room_invitations WHERE id = $1 AND status = 'pending'`,
-    [id]
+    `DELETE FROM room_invitations WHERE id = $1 AND room_id = $2 AND status = 'pending'`,
+    [id, roomId]
   );
   return (rowCount ?? 0) > 0;
 }

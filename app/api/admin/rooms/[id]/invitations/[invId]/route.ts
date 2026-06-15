@@ -12,7 +12,7 @@ export async function DELETE(
   try {
     const { id, invId } = await params;
     await requireRoomOwner(id);
-    const deleted = await cancelInvitation(invId);
+    const deleted = await cancelInvitation(invId, id);
     if (!deleted) {
       return NextResponse.json({ error: "not_found" }, { status: 404 });
     }
