@@ -48,11 +48,20 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   trustHost: true,
   callbacks: {
     async signIn({ profile }) {
-      if (!profile?.email) return false;
+      // Entra v2 tokens don't always include the optional `email` claim; fall
+      // back to the UPN / preferred_username (which is the user's @illinois.edu
+      // address for our tenant). The allowlist matches on this value, so the
+      // session lookup must resolve to the same string — see the session
+      // callback below, which stamps it onto session.user.email.
+      const p = profile as Record<string, unknown> | undefined;
+      const rawEmail =
+        (p?.email as string | undefined) ||
+        (p?.preferred_username as string | undefined) ||
+        (p?.upn as string | undefined);
+      if (!rawEmail) return false;
 
-      const email = (profile.email as string).toLowerCase();
-      const displayName =
-        (profile as Record<string, unknown>).name as string || email;
+      const email = rawEmail.toLowerCase();
+      const displayName = (p?.name as string) || email;
 
       const { rows } = await query<{
         id: string;
@@ -114,6 +123,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         const u = session.user as unknown as Record<string, unknown>;
         u.creatorId = token.creatorId;
         u.creatorEmail = token.creatorEmail;
+        // getCreator() resolves the Entra session via session.user.email; when
+        // the tenant omitted the email claim, populate it with the resolved
+        // UPN so the lookup matches the allowlist row we signed in against.
+        if (!u.email && token.creatorEmail) u.email = token.creatorEmail;
       }
       return session;
     },

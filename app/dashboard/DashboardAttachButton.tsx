@@ -297,6 +297,7 @@ export default function DashboardAttachButton({
           onClose={() => setGithubOpen(false)}
         >
           <form onSubmit={attachGitHub} style={{ display: "grid", gap: 10 }}>
+            {err && <ModalError err={err} onClose={() => setErr(null)} />}
             <input
               required
               value={githubUrl}
@@ -363,6 +364,7 @@ export default function DashboardAttachButton({
       {urlOpen && (
         <Modal title="Scrape URL" onClose={() => setUrlOpen(false)}>
           <form onSubmit={attachUrl} style={{ display: "grid", gap: 10 }}>
+            {err && <ModalError err={err} onClose={() => setErr(null)} />}
             <input
               required
               value={urlSource}
@@ -392,6 +394,39 @@ export default function DashboardAttachButton({
         </Modal>
       )}
     </span>
+  );
+}
+
+// Inline error shown INSIDE a modal. The shared `err` banner is absolutely
+// positioned at zIndex 50 — behind the modal backdrop (zIndex 70) — so a
+// preview/attach failure with a modal open would otherwise be invisible and
+// the dialog would appear to do nothing.
+function ModalError({ err, onClose }: { err: string; onClose: () => void }) {
+  return (
+    <div
+      style={{
+        background: "#fef2f2",
+        color: "#991b1b",
+        padding: "8px 10px",
+        borderRadius: 6,
+        fontSize: 13,
+        border: "1px solid #fecaca",
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: 8,
+      }}
+    >
+      <span>{err}</span>
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Dismiss error"
+        style={{ background: "none", border: "none", cursor: "pointer", color: "inherit" }}
+      >
+        ✕
+      </button>
+    </div>
   );
 }
 
