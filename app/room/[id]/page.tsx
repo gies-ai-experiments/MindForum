@@ -18,6 +18,9 @@ import {
 } from "@/lib/notify";
 import { PollLaunchModal } from "./PollLaunchModal";
 import { PollCard } from "./PollCard";
+import FeatureTour from "@/app/components/FeatureTour";
+import TourReplayButton from "@/app/components/TourReplayButton";
+import { ROOM_TOUR_STEPS, TOUR_KEYS } from "@/lib/tour-steps";
 
 type Participant = { id: string; name: string; email: string; joinedAt: number };
 type SourceType = "uploaded" | "github_repo" | "web_url";
@@ -129,6 +132,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
   const [unread, setUnread] = useState(0);
   const [perm, setPerm] = useState<NotificationPermission | "unsupported">("default");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
   const [previewFileId, setPreviewFileId] = useState<string | null>(null);
   const [previewData, setPreviewData] = useState<FilePreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -156,6 +160,8 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
   const prefsRef = useRef(prefs);
   const participantIdRef = useRef(participantId);
   const messagesRef = useRef<Msg[]>([]);
+  // Saves the composer text while the tour's "/poll" step demonstrates the command.
+  const tourSavedDraftRef = useRef("");
   useEffect(() => {
     nameRef.current = name;
   }, [name]);
@@ -222,6 +228,64 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
       if (savedEmail) setEmail(savedEmail);
     } catch {}
   }, []);
+
+  // Auto-join if signed in as a creator — skip the name/email prompt.
+  useEffect(() => {
+    let cancelled = false;
+    async function autoJoin() {
+      // Probe the (non-rate-limited) creator endpoint FIRST. Anonymous
+      // visitors must not reach the /join POST below: that bucket is 10/min
+      // per IP, so on a shared IP (a roomful of faculty) the empty-body probe
+      // would burn join attempts and 429 the real joins. `/api/creator/me`
+      // resolves the creator cookie or Entra session without spending quota.
+      try {
+        const me = await fetch(`/api/creator/me`);
+        if (cancelled) return;
+        if (!me.ok) return; // not a creator — show the normal join form
+      } catch {
+        return; // network error — fall back to the normal join form
+      }
+
+      setJoining(true);
+      try {
+        const res = await fetch(`/api/room/${id}/join`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: "{}",
+        });
+        if (cancelled) return;
+        if (!res.ok) return;
+        const data: {
+          participantId: string | null;
+          readOnly?: boolean;
+          catchupHint?: { should: false } | { should: true; since: number | null };
+        } = await res.json().catch(() => ({ participantId: null }));
+        // A creator opening an archived room they own gets a read-only
+        // handshake with participantId === null; treat that as joined too
+        // (mirrors the manual join path) so they see the read-only room
+        // instead of being stranded on the join form.
+        if (data.participantId || data.readOnly) {
+          setParticipantId(data.participantId ?? "");
+          setJoined(true);
+          if (data.catchupHint?.should) {
+            setCatchupOpen(true);
+            setCatchupLoading(true);
+            fetch(`/api/room/${id}/catchup`)
+              .then((r) => (r.ok ? r.json() : Promise.reject(r)))
+              .then((cd: CatchupData) => setCatchupData(cd))
+              .catch(() => setCatchupData({ kind: "error" }))
+              .finally(() => setCatchupLoading(false));
+          }
+        }
+      } catch {
+        // no creator cookie — show the normal join form
+      } finally {
+        if (!cancelled) setJoining(false);
+      }
+    }
+    autoJoin();
+    return () => { cancelled = true; };
+  }, [id]);
 
   async function join(e: React.FormEvent) {
     e.preventDefault();
@@ -728,6 +792,8 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
 
   function copyLink() {
     navigator.clipboard.writeText(window.location.href);
+    setLinkCopied(true);
+    setTimeout(() => setLinkCopied(false), 2000);
   }
 
   if (!joined) {
@@ -869,6 +935,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
       <div style={{ position: "relative" }}>
         <button
           type="button"
+          data-tour="attach"
           disabled={busy || state.archived}
           onClick={() => setAttachMenuOpen((open) => !open)}
           style={{
@@ -922,6 +989,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
       </div>
       <div>
         <button
+          data-tour="brief"
           onClick={() => {
             generateBrief();
             setFilesDrawerOpen(false);
@@ -960,6 +1028,24 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
         minHeight: 0,
       }}
     >
+      <FeatureTour
+        steps={ROOM_TOUR_STEPS}
+        storageKey={TOUR_KEYS.room}
+        autoStart
+        startWhen={joined && !catchupOpen}
+        hooks={{
+          poll: {
+            // Show "/poll" in the composer (triggers the live /poll highlight) while
+            // the popover explains it; restore whatever was there when the step leaves.
+            onShow: () =>
+              setDraft((d) => {
+                tourSavedDraftRef.current = d;
+                return "/poll";
+              }),
+            onHide: () => setDraft(() => tourSavedDraftRef.current),
+          },
+        }}
+      />
       {showPollModal && (
         <PollLaunchModal
           roomId={id}
@@ -1164,9 +1250,10 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
               </span>
             )}
           </button>
-          <button onClick={copyLink} style={{ ...btnSecondary(), background: "var(--orange)" }}>
-            Copy link
+          <button onClick={copyLink} style={{ ...btnSecondary(), background: linkCopied ? "#166534" : "var(--orange)" }}>
+            {linkCopied ? "Link copied ✓" : "Copy link"}
           </button>
+          <TourReplayButton surface="room" className="room-tour-btn" />
           {settingsOpen && (
             <NotifySettingsPopover
               prefs={prefs}
@@ -1206,7 +1293,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
         }}
       >
         {!isNarrow && (
-          <aside style={{ ...col(), display: "grid", gridTemplateRows: "auto 1fr", minHeight: 0 }}>
+          <aside data-tour="participants" style={{ ...col(), display: "grid", gridTemplateRows: "auto 1fr", minHeight: 0 }}>
             <h3 style={colTitle()}>Participants</h3>
             {participantsListNode}
           </aside>
@@ -1321,6 +1408,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
                       {renderInputMentions(draft)}
                     </div>
                     <TextareaAutosize
+                      data-tour="composer"
                       value={draft}
                       onChange={(e) => setDraft(e.target.value)}
                       onKeyDown={(e) => {

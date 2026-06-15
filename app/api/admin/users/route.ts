@@ -21,6 +21,7 @@ export async function GET() {
       email: r.email,
       displayName: r.displayName,
       isSuperAdmin: r.isSuperAdmin,
+      createdBy: r.createdBy,
       disabledAt: r.disabledAt,
       tokenLastFour: r.tokenLastFour,
       tokenRotatedAt: r.tokenRotatedAt,

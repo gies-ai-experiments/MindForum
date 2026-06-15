@@ -8,10 +8,12 @@ Shared AI brainstorming room app for small faculty groups. Next.js 15 + SSE + Po
 |---|---|
 | Prod URL | (private — see `~/.claude/projects/-Users-vishal-research-mindforum/memory/`) — **now served by Azure** (cut over 2026-06-08) |
 | Azure app | App Service `mindforum`, RG `DL_ResourceGroup_01`, sub `urbana-business-disruptionlab`, North Central US; host `mindforum.azurewebsites.net`. Deploy via `main_mindforum.yml`. |
-| Azure DB | Postgres Flexible Server `dl-postgresqlserver-01.postgres.database.azure.com`, db `postgres` (dump restored; 17 rooms live) |
+| Azure DB | Postgres Flexible Server `dl-postgresqlserver-01.postgres.database.azure.com`, db **`mindforum`** (NOT the default `postgres` db — that's a system default, never touch it). Migrate with `POSTGRES_URL=<mindforum-conn-str> npm run migrate`. |
 | Azure OpenAI | endpoint `dl-foundry-mindforum.openai.azure.com`; models routed FAST/DEFAULT=`gpt-4.1`, STRONG=`gpt-5.4` (see `lib/model-routing.ts`) |
 | VPS (rollback) | `/root/repos/mindforum` (ssh alias `vps`), PM2 `mindforum` port 3006, Postgres role/db `mindforum` localhost:5432. Still running + still auto-deployed; rollback = flip CF record back to proxied `A → 76.13.122.44` (null worker route left in place for this). |
 | Repo | `gies-ai-experiments/MindForum` (public, MIT; deploy key `mindforum_deploy` on VPS) |
+
+**Azure rule**: ANY task involving database migrations, cloud deployment, App Service configuration, PostgreSQL operations, DNS, or Entra ID auth → **ALWAYS consult the Azure skills first**: `illinois-azure-cli-deploy` (commands), `illinois-azure-app-migration` (topology/planning), `illinois-azure-governance` (guardrails). Never run `az` commands or touch Azure resources without loading these skills.
 
 ## Required env vars
 

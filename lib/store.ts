@@ -1176,7 +1176,186 @@ export type RoomActivityRow = {
   totalParticipants: number;
   fileCount: number;
   closedAt: Date | null;
+  relationship: "owner" | "invited";
 };
+
+// -------- Room Invitations
+
+export type RoomInvitation = {
+  id: string;
+  roomId: string;
+  roomName: string;
+  inviterId: string;
+  inviterName: string;
+  inviteeEmail: string;
+  inviteeName: string;
+  status: "pending" | "accepted" | "declined";
+  createdAt: number;
+  acceptedAt: number | null;
+  declinedAt: number | null;
+};
+
+type InvitationRow = {
+  id: string;
+  room_id: string;
+  room_name: string;
+  inviter_id: string;
+  inviter_name: string;
+  invitee_email: string;
+  invitee_name: string;
+  status: string;
+  created_at: Date;
+  accepted_at: Date | null;
+  declined_at: Date | null;
+};
+
+function toInvitation(r: InvitationRow): RoomInvitation {
+  return {
+    id: r.id,
+    roomId: r.room_id,
+    roomName: r.room_name,
+    inviterId: r.inviter_id,
+    inviterName: r.inviter_name,
+    inviteeEmail: r.invitee_email,
+    inviteeName: r.invitee_name,
+    status: r.status as RoomInvitation["status"],
+    createdAt: r.created_at.getTime(),
+    acceptedAt: r.accepted_at ? r.accepted_at.getTime() : null,
+    declinedAt: r.declined_at ? r.declined_at.getTime() : null,
+  };
+}
+
+export async function createInvitation(input: {
+  roomId: string;
+  inviterId: string;
+  inviteeEmail: string;
+  inviteeName: string;
+}): Promise<
+  | { ok: true; invitation: RoomInvitation }
+  | { ok: false; error: "already_invited" | "room_not_found" }
+> {
+  return tx(async (client) => {
+    const roomCheck = await client.query<{ name: string }>(
+      `SELECT name FROM rooms WHERE id = $1`, [input.roomId]
+    );
+    if (roomCheck.rowCount === 0) return { ok: false, error: "room_not_found" };
+
+    const inviterRes = await client.query<{ display_name: string }>(
+      `SELECT display_name FROM allowlisted_creators WHERE id = $1`,
+      [input.inviterId]
+    );
+    const inviterName = inviterRes.rows[0]?.display_name ?? "Unknown";
+
+    const id = `inv_${nanoid(10)}`;
+    const roomName = roomCheck.rows[0].name;
+    const { rows, rowCount } = await client.query<InvitationRow>(
+      `INSERT INTO room_invitations (id, room_id, inviter_id, invitee_email, invitee_name, status)
+       VALUES ($1, $2, $3, $4, $5, 'pending')
+       ON CONFLICT (room_id, lower(invitee_email)) DO NOTHING
+       RETURNING id, room_id, $6 AS room_name, inviter_id, $7 AS inviter_name,
+                 invitee_email, invitee_name, status, created_at, accepted_at, declined_at`,
+      [id, input.roomId, input.inviterId, input.inviteeEmail, input.inviteeName,
+       roomName, inviterName]
+    );
+    if ((rowCount ?? 0) === 0) return { ok: false, error: "already_invited" };
+    return { ok: true, invitation: toInvitation(rows[0]) };
+  });
+}
+
+export async function listInvitationsByRoom(roomId: string): Promise<RoomInvitation[]> {
+  const { rows } = await query<InvitationRow>(
+    `SELECT inv.id, inv.room_id, r.name AS room_name, inv.inviter_id,
+            c.display_name AS inviter_name, inv.invitee_email, inv.invitee_name,
+            inv.status, inv.created_at, inv.accepted_at, inv.declined_at
+     FROM room_invitations inv
+     JOIN rooms r ON r.id = inv.room_id
+     LEFT JOIN allowlisted_creators c ON c.id = inv.inviter_id
+     WHERE inv.room_id = $1
+     ORDER BY inv.created_at DESC`,
+    [roomId]
+  );
+  return rows.map(toInvitation);
+}
+
+export async function listPendingInvitationsByEmail(email: string): Promise<RoomInvitation[]> {
+  const { rows } = await query<InvitationRow>(
+    `SELECT inv.id, inv.room_id, r.name AS room_name, inv.inviter_id,
+            c.display_name AS inviter_name, inv.invitee_email, inv.invitee_name,
+            inv.status, inv.created_at, inv.accepted_at, inv.declined_at
+     FROM room_invitations inv
+     JOIN rooms r ON r.id = inv.room_id
+     LEFT JOIN allowlisted_creators c ON c.id = inv.inviter_id
+     WHERE lower(inv.invitee_email) = lower($1)
+       AND inv.status = 'pending'
+     ORDER BY inv.created_at DESC`,
+    [email]
+  );
+  return rows.map(toInvitation);
+}
+
+export async function updateInvitationStatus(
+  id: string,
+  email: string,
+  status: "accepted" | "declined"
+): Promise<RoomInvitation | null> {
+  const timestampCol = status === "accepted" ? "accepted_at" : "declined_at";
+  // Block accepting an invite to an archived room — the invitee would be
+  // redirected to /room/<id> and hit the archived-room 410 (non-owners get no
+  // bypass). Declines stay allowed so users can clear a stale invitation.
+  const archivedGuard =
+    status === "accepted"
+      ? `AND EXISTS (SELECT 1 FROM rooms r
+                       WHERE r.id = room_invitations.room_id
+                         AND r.archived_at IS NULL)`
+      : "";
+  const { rows } = await query<InvitationRow>(
+    `UPDATE room_invitations
+     SET status = $3, ${timestampCol} = NOW()
+     WHERE id = $1 AND lower(invitee_email) = lower($2) AND status = 'pending'
+       ${archivedGuard}
+     RETURNING id, room_id, '' AS room_name, inviter_id, '' AS inviter_name,
+               invitee_email, invitee_name, status, created_at, accepted_at, declined_at`,
+    [id, email, status]
+  );
+  if (rows.length === 0) return null;
+  const row = rows[0];
+  const [roomRes, inviterRes] = await Promise.all([
+    query<{ name: string }>(`SELECT name FROM rooms WHERE id = $1`, [row.room_id]),
+    query<{ display_name: string }>(`SELECT display_name FROM allowlisted_creators WHERE id = $1`, [row.inviter_id]),
+  ]);
+  return toInvitation({
+    ...row,
+    room_name: roomRes.rows[0]?.name ?? "",
+    inviter_name: inviterRes.rows[0]?.display_name ?? "Unknown",
+  });
+}
+
+export async function cancelInvitation(id: string, roomId: string): Promise<boolean> {
+  // Scope the delete to the room the caller proved ownership of. Without the
+  // room_id predicate, an owner of any room could cancel another room's
+  // pending invitation by guessing its id (the route only authorizes the
+  // path room).
+  const { rowCount } = await query(
+    `DELETE FROM room_invitations WHERE id = $1 AND room_id = $2 AND status = 'pending'`,
+    [id, roomId]
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+export async function lookupCreators(q: string): Promise<{ id: string; email: string; displayName: string }[]> {
+  if (!q || q.trim().length < 1) return [];
+  const { rows } = await query<{ id: string; email: string; display_name: string }>(
+    `SELECT id, email, display_name FROM allowlisted_creators
+     WHERE (lower(email) LIKE '%' || lower($1) || '%'
+            OR lower(display_name) LIKE '%' || lower($1) || '%')
+       AND disabled_at IS NULL
+       AND id != 'cr_super_admin'
+     ORDER BY display_name ASC
+     LIMIT 5`,
+    [q.trim()]
+  );
+  return rows.map((r) => ({ id: r.id, email: r.email, displayName: r.display_name }));
+}
 
 export type ArchivedFilter = "true" | "false" | "all";
 
@@ -1194,16 +1373,26 @@ export async function adminListRoomsWithActivity(opts: {
   q?: string;
   archived?: ArchivedFilter;
   ownerId?: string;
+  inviteeEmail?: string;
 }): Promise<RoomActivityRow[]> {
-  const { column, direction, q, archived = "false", ownerId } = opts;
+  const { column, direction, q, archived = "false", ownerId, inviteeEmail } = opts;
   // column/direction come from the whitelist resolver in lib/admin-sort.ts —
-  // safe to interpolate. q / ownerId are parameterized.
+  // safe to interpolate. q / ownerId / inviteeEmail are parameterized.
   let archivedClause: string;
   if (archived === "true") archivedClause = "AND r.archived_at IS NOT NULL";
   else if (archived === "false") archivedClause = "AND r.archived_at IS NULL";
   else archivedClause = ""; // 'all'
 
-  const sql = `
+  const hasInvitee = inviteeEmail != null && inviteeEmail.trim() !== "";
+
+  const sql = hasInvitee
+    ? `
+    WITH accessible_rooms AS (
+      SELECT r.id FROM rooms r WHERE $2::text IS NULL OR r.owner_id = $2
+      UNION
+      SELECT inv.room_id FROM room_invitations inv
+      WHERE lower(inv.invitee_email) = lower($3) AND inv.status = 'accepted'
+    )
     SELECT
       r.id,
       r.name,
@@ -1217,7 +1406,33 @@ export async function adminListRoomsWithActivity(opts: {
       COUNT(DISTINCT m.author_id) FILTER (WHERE m.created_at > NOW() - INTERVAL '7 days' AND m.author_id != 'ai') AS participants_7d,
       MAX(m.created_at) AS last_message_at,
       (SELECT COUNT(*) FROM participants p WHERE p.room_id = r.id) AS total_participants,
-      (SELECT COUNT(*) FROM room_files f WHERE f.room_id = r.id)  AS file_count
+      (SELECT COUNT(*) FROM room_files f WHERE f.room_id = r.id)  AS file_count,
+      CASE WHEN $2::text IS NOT NULL AND r.owner_id = $2 THEN 'owner' ELSE 'invited' END AS relationship
+    FROM rooms r
+    JOIN accessible_rooms ar ON ar.id = r.id
+    LEFT JOIN messages m ON m.room_id = r.id
+    LEFT JOIN allowlisted_creators c ON c.id = r.owner_id
+    WHERE ($1::text IS NULL OR r.name ILIKE '%' || $1 || '%')
+      ${archivedClause}
+    GROUP BY r.id, c.display_name
+    ORDER BY ${column} ${direction} NULLS LAST
+    `
+    : `
+    SELECT
+      r.id,
+      r.name,
+      r.created_at,
+      r.archived_at,
+      r.owner_id,
+      c.display_name AS owner_display_name,
+      r.closed_at,
+      COUNT(m.id) FILTER (WHERE m.created_at > NOW() - INTERVAL '24 hours') AS msgs_24h,
+      COUNT(m.id) FILTER (WHERE m.created_at > NOW() - INTERVAL '7 days')   AS msgs_7d,
+      COUNT(DISTINCT m.author_id) FILTER (WHERE m.created_at > NOW() - INTERVAL '7 days' AND m.author_id != 'ai') AS participants_7d,
+      MAX(m.created_at) AS last_message_at,
+      (SELECT COUNT(*) FROM participants p WHERE p.room_id = r.id) AS total_participants,
+      (SELECT COUNT(*) FROM room_files f WHERE f.room_id = r.id)  AS file_count,
+      'owner' AS relationship
     FROM rooms r
     LEFT JOIN messages m ON m.room_id = r.id
     LEFT JOIN allowlisted_creators c ON c.id = r.owner_id
@@ -1226,7 +1441,8 @@ export async function adminListRoomsWithActivity(opts: {
       ${archivedClause}
     GROUP BY r.id, c.display_name
     ORDER BY ${column} ${direction} NULLS LAST
-  `;
+    `;
+
   const result = await query<{
     id: string;
     name: string;
@@ -1241,7 +1457,13 @@ export async function adminListRoomsWithActivity(opts: {
     last_message_at: Date | null;
     total_participants: string;
     file_count: string;
-  }>(sql, [q && q.trim() ? q.trim() : null, ownerId ?? null]);
+    relationship: string;
+  }>(
+    sql,
+    hasInvitee
+      ? [q && q.trim() ? q.trim() : null, ownerId ?? null, inviteeEmail]
+      : [q && q.trim() ? q.trim() : null, ownerId ?? null]
+  );
   return result.rows.map((r) => ({
     id: r.id,
     name: r.name,
@@ -1256,6 +1478,7 @@ export async function adminListRoomsWithActivity(opts: {
     lastMessageAt: r.last_message_at,
     totalParticipants: Number(r.total_participants),
     fileCount: Number(r.file_count),
+    relationship: r.relationship as "owner" | "invited",
   }));
 }
 

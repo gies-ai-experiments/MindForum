@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-export default function SignOutButton() {
+export default function SignOutButton({ className }: { className?: string }) {
   const [busy, setBusy] = useState(false);
   return (
     <button
@@ -17,15 +17,20 @@ export default function SignOutButton() {
           window.location.href = "/dashboard";
         }
       }}
-      style={{
-        padding: "6px 12px",
-        fontSize: 13,
-        background: "white",
-        color: "#374151",
-        border: "1px solid #d1d5db",
-        borderRadius: 6,
-        cursor: busy ? "wait" : "pointer",
-      }}
+      className={className}
+      style={
+        className
+          ? { cursor: busy ? "wait" : "pointer" }
+          : {
+              padding: "6px 12px",
+              fontSize: 13,
+              background: "white",
+              color: "#374151",
+              border: "1px solid #d1d5db",
+              borderRadius: 6,
+              cursor: busy ? "wait" : "pointer",
+            }
+      }
     >
       {busy ? "Signing out…" : "Sign out"}
     </button>

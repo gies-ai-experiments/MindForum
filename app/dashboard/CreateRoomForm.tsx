@@ -2,13 +2,23 @@
 
 import { useState } from "react";
 import { MAX_SYSTEM_PROMPT_CHARS } from "@/lib/limits";
+import DashboardAttachButton, {
+  type PendingAttachment,
+} from "./DashboardAttachButton";
 
 const SLUG_RE = /^[a-z0-9-]{3,40}$/;
+
+function pendingLabel(item: PendingAttachment): string {
+  if (item.kind === "file") return item.file.name;
+  if (item.kind === "github") return `GitHub: ${item.url}`;
+  return `URL: ${item.url}`;
+}
 
 export default function CreateRoomForm() {
   const [slug, setSlug] = useState("");
   const [name, setName] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
+  const [pending, setPending] = useState<PendingAttachment[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,6 +51,54 @@ export default function CreateRoomForm() {
       });
       if (res.ok) {
         const data = await res.json();
+        // The room exists now — apply queued attachments against its id.
+        const failures: string[] = [];
+        for (const item of pending) {
+          try {
+            let r: Response;
+            if (item.kind === "file") {
+              const fd = new FormData();
+              fd.append("file", item.file);
+              r = await fetch(`/api/dashboard/room/${data.id}/upload`, {
+                method: "POST",
+                body: fd,
+              });
+            } else if (item.kind === "github") {
+              r = await fetch(
+                `/api/dashboard/room/${data.id}/context/github`,
+                {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({
+                    url: item.url,
+                    include: item.include,
+                    exclude: item.exclude,
+                  }),
+                }
+              );
+            } else {
+              r = await fetch(`/api/dashboard/room/${data.id}/context/url`, {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  url: item.url,
+                  instruction: item.instruction,
+                }),
+              });
+            }
+            if (!r.ok) {
+              const b = await r.json().catch(() => ({}));
+              failures.push(`${pendingLabel(item)} — ${b.error ?? r.status}`);
+            }
+          } catch (err) {
+            failures.push(`${pendingLabel(item)} — ${(err as Error).message}`);
+          }
+        }
+        if (failures.length > 0) {
+          alert(
+            `Room created, but some attachments failed:\n${failures.join("\n")}`
+          );
+        }
         window.location.href = `/dashboard/rooms/${data.id}/settings`;
         return;
       }
@@ -113,6 +171,65 @@ export default function CreateRoomForm() {
           }}
         />
       </label>
+
+      <div style={{ display: "grid", gap: 4, justifyItems: "start" }}>
+        <span style={{ fontSize: 13, color: "#374151" }}>
+          Context files{" "}
+          <span style={{ color: "#888" }}>
+            (optional — attached right after the room is created)
+          </span>
+        </span>
+        <DashboardAttachButton
+          archived={false}
+          onQueue={(item) => setPending((p) => [...p, item])}
+        />
+        {pending.length > 0 && (
+          <ul
+            style={{
+              margin: 0,
+              padding: 0,
+              listStyle: "none",
+              display: "grid",
+              gap: 4,
+              fontSize: 13,
+            }}
+          >
+            {pending.map((item, i) => (
+              <li
+                key={i}
+                style={{ display: "flex", alignItems: "center", gap: 6 }}
+              >
+                <span
+                  style={{
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    maxWidth: 480,
+                  }}
+                >
+                  {pendingLabel(item)}
+                </span>
+                <button
+                  type="button"
+                  aria-label={`Remove ${pendingLabel(item)}`}
+                  onClick={() =>
+                    setPending((p) => p.filter((_, j) => j !== i))
+                  }
+                  style={{
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    color: "#888",
+                    padding: 0,
+                  }}
+                >
+                  ✕
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
       <label style={{ display: "grid", gap: 4 }}>
         <span

@@ -50,7 +50,13 @@ export async function POST(req: NextRequest) {
   }
 }
 
-/** DELETE: clear the session cookie. Always 204 — sign-out is idempotent. */
+/**
+ * DELETE: clear BOTH session paths — the creator-token cookie and the Auth.js
+ * (Entra ID) session cookie. The session uses the JWT strategy (stateless), so
+ * expiring the cookie fully ends the session; without this, an Entra user is
+ * re-authenticated by `getCreator()` the instant they land back on /dashboard
+ * and can never actually sign out. Always 204 — sign-out is idempotent.
+ */
 export async function DELETE() {
   const res = new NextResponse(null, { status: 204 });
   res.cookies.set(CREATOR_COOKIE, "", {
@@ -60,5 +66,25 @@ export async function DELETE() {
     path: "/",
     maxAge: 0,
   });
+
+  // Expire the Auth.js session cookie under every name it may carry: v5
+  // (`authjs.*`) and legacy v4 (`next-auth.*`), each with and without the
+  // `__Secure-` prefix (production HTTPS adds it). A `__Secure-` cookie can
+  // only be cleared with Secure set, so those entries force secure: true.
+  const authCookies: Array<{ name: string; secure: boolean }> = [
+    { name: "__Secure-authjs.session-token", secure: true },
+    { name: "authjs.session-token", secure: false },
+    { name: "__Secure-next-auth.session-token", secure: true },
+    { name: "next-auth.session-token", secure: false },
+  ];
+  for (const { name, secure } of authCookies) {
+    res.cookies.set(name, "", {
+      httpOnly: true,
+      secure,
+      sameSite: "lax",
+      path: "/",
+      maxAge: 0,
+    });
+  }
   return res;
 }
