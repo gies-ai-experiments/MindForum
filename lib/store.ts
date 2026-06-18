@@ -1061,16 +1061,21 @@ export async function setSystemPrompt(
 
 /** Post a facilitator announcement as a kind:"system" message.
  *  Admin bypass: this does NOT check closed_at, so admins can announce on
- *  closed rooms (e.g. "Session ended, thanks for joining"). */
+ *  closed rooms (e.g. "Session ended, thanks for joining").
+ *
+ *  Optional `opts` overrides the default facilitator attribution — used by the
+ *  file-delete path so the system note is honestly attributed to the person who
+ *  removed the file (uploader or owner) rather than always "Facilitator". */
 export async function postSystemAnnouncement(
   roomId: string,
   content: string,
+  opts?: { authorId?: string; authorName?: string },
 ): Promise<Message> {
   const msg: Message = {
     id: nanoid(10),
     roomId,
-    authorId: "facilitator",
-    authorName: "Facilitator",
+    authorId: opts?.authorId ?? "facilitator",
+    authorName: opts?.authorName ?? "Facilitator",
     content: content.slice(0, 4000),
     createdAt: Date.now(),
     kind: "system",
@@ -1851,6 +1856,77 @@ export async function deleteRoomFile(roomId: string, fileId: string): Promise<bo
     [roomId, fileId]
   );
   return (rowCount ?? 0) > 0;
+}
+
+/**
+ * Atomically delete a room_files row AND post a kind:"system" chat note
+ * describing the removal. Both succeed or both roll back — there is no window
+ * where the file is gone but the explanatory chat note is missing (codex-review
+ * R1 P1). The note's authorId/authorName come from the caller (participant for
+ * uploader-delete, actor.displayName for owner/super-admin delete) so the
+ * system message is honestly attributed instead of always "Facilitator".
+ *
+ * Audit logging stays OUTSIDE this tx by design: the audit log is a record,
+ * not a gate (lib/audit.ts), and is best-effort across the codebase. A
+ * successful return guarantees the file row is gone and the note is persisted;
+ * the caller fires `file_removed` + `message_added` SSE after commit.
+ *
+ * Returns `{ file, message }` on success, or `null` if the file row didn't
+ * exist (caller maps to 404). The returned `file` is the pre-delete snapshot
+ * for audit metadata.
+ */
+export async function deleteRoomFileWithSystemNote(
+  roomId: string,
+  fileId: string,
+  author: { id: string; name: string },
+  noteContent: string,
+): Promise<{ file: RoomFile; message: Message } | null> {
+  return tx(async (c) => {
+    // Lock + capture the row for audit metadata. FOR UPDATE on a single row we
+    // are about to DELETE can't deadlock with the upload INSERT, the toggle
+    // UPDATE, or the @ai reply's plain SELECT (getSelectedFiles) — they touch
+    // different rows or read without locks.
+    const snap = await c.query<RoomFileRow>(
+      `SELECT id, room_id, name, mime, size_bytes, uploaded_by_id,
+              extracted_text, selected, uploaded_at, source_type, source_url, source_meta, summary
+         FROM room_files WHERE room_id = $1 AND id = $2 FOR UPDATE`,
+      [roomId, fileId]
+    );
+    if (snap.rowCount === 0) return null;
+    const file = toRoomFile(snap.rows[0]);
+
+    await c.query(`DELETE FROM room_files WHERE room_id = $1 AND id = $2`, [
+      roomId,
+      fileId,
+    ]);
+
+    const msgId = nanoid(10);
+    const createdAt = Date.now();
+    await c.query(
+      `INSERT INTO messages (id, room_id, author_id, author_name, content, kind, created_at)
+       VALUES ($1, $2, $3, $4, $5, 'system', to_timestamp($6 / 1000.0))`,
+      [
+        msgId,
+        roomId,
+        author.id,
+        author.name,
+        noteContent.slice(0, 4000),
+        createdAt,
+      ]
+    );
+
+    const message: Message = {
+      id: msgId,
+      roomId,
+      authorId: author.id,
+      authorName: author.name,
+      content: noteContent.slice(0, 4000),
+      createdAt,
+      kind: "system",
+    };
+
+    return { file, message };
+  });
 }
 
 /**

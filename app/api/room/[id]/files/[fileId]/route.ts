@@ -1,16 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  deleteRoomFile,
+  deleteRoomFileWithSystemNote,
   getParticipant,
   getRoomFileById,
+  getRoomMeta,
 } from "@/lib/store";
 import { query } from "@/lib/db";
 import { broadcast } from "@/lib/sse";
 import {
   assertActiveOrOwnerOnArchive,
+  getActor,
   httpErrorResponse,
-  requireRoomOwner,
 } from "@/lib/creator-auth";
+import { requireRoomParticipant } from "@/lib/auth-helpers";
 import { logAudit } from "@/lib/audit";
 
 export const runtime = "nodejs";
@@ -87,37 +89,100 @@ export async function GET(
 }
 
 /**
- * DELETE: remove a file from the room. Owner-or-super-admin only — there's
- * no participant-facing delete UX in v1. Captures a snapshot before delete
- * for the audit `file.delete` metadata. Refuses on archived rooms (per the
+ * DELETE: remove a file from the room.
+ *
+ * Two-branch auth (codex-reviewed plan):
+ *  - Owner / super-admin (via creator cookie or NextAuth/Entra session) can
+ *    delete ANY file in a room they own. Super-admin bypasses ownership.
+ *  - Otherwise, a joined participant can delete a file they uploaded
+ *    themselves (`file.uploaded_by_id === participant.id`). Files attached via
+ *    the owner dashboard use `creator:<actor.id>` and can't be matched by a
+ *    participant cookie, so owner-attached files stay owner-only deletable.
+ *  - A participant who joined but did not upload the file gets 403
+ *    `not_your_file` (they're already a room member, so no existence leak).
+ *  - A non-joined requester gets 401 `not_joined` regardless of creator
+ *    status — preserves the existing 404-not-403 cross-owner hiding behavior.
+ *
+ * The delete + the explanatory kind:"system" chat note are written in a single
+ * transaction (deleteRoomFileWithSystemNote) so a 204 guarantees BOTH the file
+ * row is gone AND the chat note is persisted. Audit log stays outside the tx
+ * (best-effort record, not a gate). Refuses on archived rooms (per the
  * soft-delete matrix: edits to archived rooms require restore first).
  */
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   ctx: { params: Promise<{ id: string; fileId: string }> }
 ) {
   try {
     const { id, fileId } = await ctx.params;
-    const { actor, room } = await requireRoomOwner(id);
+    const room = await getRoomMeta(id);
+    if (!room) return NextResponse.json({ error: "not_found" }, { status: 404 });
     if (room.archivedAt !== null) {
       return NextResponse.json({ error: "archived" }, { status: 410 });
     }
-    const snap = await getRoomFileById(id, fileId);
-    if (!snap) return NextResponse.json({ error: "file_not_found" }, { status: 404 });
-    const ok = await deleteRoomFile(id, fileId);
-    if (!ok) return NextResponse.json({ error: "file_not_found" }, { status: 404 });
+
+    // Resolve actor for the two-branch decision. Owner/super-admin path does
+    // not require a participant cookie; uploader path does.
+    const actor = await getActor();
+    const isOwnerActor = !!actor && (actor.isSuperAdmin || room.ownerId === actor.id);
+
+    let author: { id: string; name: string };
+    let deleterRole: "owner" | "super_admin" | "uploader";
+    let auditActor: { id: string; email: string };
+    let fileName: string;
+
+    if (isOwnerActor && actor) {
+      // Owner / super-admin: can delete any file. Single lookup for the name
+      // (the note text); the tx re-SELECTs under FOR UPDATE for TOCTOU safety.
+      const file = await getRoomFileById(id, fileId);
+      if (!file) return NextResponse.json({ error: "file_not_found" }, { status: 404 });
+      author = { id: actor.id, name: actor.displayName };
+      deleterRole = actor.isSuperAdmin ? "super_admin" : "owner";
+      auditActor = { id: actor.id, email: actor.email };
+      fileName = file.name;
+    } else {
+      // Uploader path: must be a joined participant deleting their own upload.
+      // A non-joined requester (including a cross-owner creator) gets 401
+      // not_joined here, preserving the existing cross-owner hiding behavior.
+      const auth = await requireRoomParticipant(req, id);
+      if (!auth.ok) return auth.response;
+      const participant = auth.participant;
+
+      const file = await getRoomFileById(id, fileId);
+      if (!file) return NextResponse.json({ error: "file_not_found" }, { status: 404 });
+      if (file.uploadedById !== participant.id) {
+        // Participant is already a room member — revealing "not your file"
+        // leaks nothing about room existence.
+        return NextResponse.json({ error: "not_your_file" }, { status: 403 });
+      }
+      author = { id: participant.id, name: participant.name };
+      deleterRole = "uploader";
+      auditActor = { id: participant.id, email: participant.email };
+      fileName = file.name;
+    }
+
+    const note = `\`${author.name}\` removed "${fileName}" from the room. Future @ai replies won't reference it.`;
+    const result = await deleteRoomFileWithSystemNote(id, fileId, author, note);
+    if (!result) {
+      // File vanished between our auth-phase lookup and the tx FOR UPDATE
+      // (e.g. another concurrent delete). Treat as not-found.
+      return NextResponse.json({ error: "file_not_found" }, { status: 404 });
+    }
+    const { file, message } = result;
 
     await logAudit({
-      actor,
+      actor: auditActor,
       action: "file.delete",
       roomId: id,
       metadata: {
-        fileId: snap.id,
-        fileName: snap.name,
-        sizeBytes: snap.sizeBytes,
+        fileId: file.id,
+        fileName: file.name,
+        sizeBytes: file.sizeBytes,
+        deleterRole,
       },
     });
     broadcast(id, "file_removed", { id: fileId });
+    broadcast(id, "message_added", message);
     return new NextResponse(null, { status: 204 });
   } catch (err) {
     return httpErrorResponse(err);

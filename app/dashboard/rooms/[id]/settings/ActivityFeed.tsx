@@ -44,8 +44,16 @@ function describe(e: AuditEntry): string {
       }`;
     }
     case "file.delete": {
-      const md = m as { fileName?: string };
-      return `deleted "${md.fileName ?? "?"}"`;
+      const md = m as { fileName?: string; deleterRole?: string };
+      const role =
+        md.deleterRole === "uploader"
+          ? " (by uploader)"
+          : md.deleterRole === "owner"
+            ? " (by owner)"
+            : md.deleterRole === "super_admin"
+              ? " (by super-admin)"
+              : "";
+      return `deleted "${md.fileName ?? "?"}"${role}`;
     }
     case "file.toggle_selected": {
       const md = m as { fileName?: string; fileId?: string; selected?: boolean };

@@ -50,7 +50,7 @@ type Msg = {
   authorName: string;
   content: string;
   createdAt: number;
-  kind?: "chat" | "brief";
+  kind?: "chat" | "brief" | "system";
   reactions?: Reaction[];
   editedAt?: number | null;
   groundingFiles?: string[] | null;
@@ -462,6 +462,23 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
       const f: PublicFile = JSON.parse((ev as MessageEvent).data);
       setState((s) => (s ? { ...s, files: upsertById(s.files, f) } : s));
     });
+    es.addEventListener("file_removed", (ev) => {
+      const { id: removedId } = JSON.parse((ev as MessageEvent).data) as { id: string };
+      // Drop from both the file list and the selected-id list so deleting the
+      // last selected file leaves no stale checked state. Pre-existing bug
+      // surfaced by this feature: the delete route already broadcast
+      // file_removed but no listener existed, so owner dashboard deletes left
+      // a ghost file in everyone's in-room panel until reload.
+      setState((s) =>
+        s
+          ? {
+              ...s,
+              files: s.files.filter((f) => f.id !== removedId),
+              selectedFileIds: s.selectedFileIds.filter((fid) => fid !== removedId),
+            }
+          : s
+      );
+    });
     es.addEventListener("room_archived", () => {
       setState((s) => (s ? { ...s, archived: true } : s));
     });
@@ -781,6 +798,28 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
     });
   }
 
+  async function deleteFile(fileId: string, name: string) {
+    if (
+      !window.confirm(
+        `Delete "${name}"? It'll be removed from the room and future @ai replies won't see it. This can't be undone.`
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/room/${id}/files/${fileId}`, { method: "DELETE" });
+      if (!res.ok && res.status !== 204) {
+        const body = await res.json().catch(() => ({}));
+        alert(`Delete failed: ${body.error ?? res.status}`);
+      }
+      // On success, rely on the incoming `file_removed` + `message_added` SSE
+      // events to update local state — no optimistic removal.
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function generateBrief() {
     setBriefPending(true);
     try {
@@ -866,6 +905,10 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
           const uploader = state.participants.find((p) => p.id === f.uploadedById);
           const uploaderLabel = uploader ? uploader.name : "Unknown uploader";
           const uploadedDate = new Date(f.uploadedAt).toLocaleDateString();
+          const canDelete =
+            !state.archived &&
+            participantIdRef.current !== "" &&
+            f.uploadedById === participantIdRef.current;
           return (
             <div
               key={f.id}
@@ -928,6 +971,28 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
                   {uploaderLabel} · {uploadedDate}
                 </div>
               </div>
+              {canDelete && (
+                <button
+                  type="button"
+                  onClick={() => deleteFile(f.id, f.name)}
+                  disabled={busy}
+                  aria-label={`Delete ${f.name}`}
+                  title="Delete (removes from room and AI context)"
+                  style={{
+                    flexShrink: 0,
+                    marginTop: 2,
+                    padding: "2px 8px",
+                    fontSize: 12,
+                    background: "transparent",
+                    color: busy ? "var(--muted)" : "#991b1b",
+                    border: "1px solid var(--border)",
+                    borderRadius: 4,
+                    cursor: busy ? "not-allowed" : "pointer",
+                  }}
+                >
+                  Delete
+                </button>
+              )}
             </div>
           );
         })}
@@ -1957,6 +2022,30 @@ function GuidanceCard({ text }: { text: string }) {
   );
 }
 
+/** Lightweight centered italic note for kind:"system" messages
+ *  (facilitator announcements, file-removed chat notes). No bubble, no hover
+ *  actions, no reactions — just a muted transcript line. */
+function SystemNoteView({ m }: { m: Msg }) {
+  return (
+    <div
+      role="status"
+      style={{
+        margin: "10px 0",
+        padding: "4px 12px",
+        textAlign: "center",
+        fontSize: 13,
+        color: "var(--muted)",
+        fontStyle: "italic",
+        borderTop: "1px solid var(--border)",
+        borderBottom: "1px solid var(--border)",
+      }}
+      title={new Date(m.createdAt).toLocaleString()}
+    >
+      {m.content}
+    </div>
+  );
+}
+
 function MsgView({
   m,
   roomId,
@@ -1969,6 +2058,7 @@ function MsgView({
   onQuote?: (m: Msg) => void;
 }) {
   if (m.kind === "brief") return <BriefView m={m} />;
+  if (m.kind === "system") return <SystemNoteView m={m} />;
   const isAi = m.authorId === "ai";
 
   const [hover, setHover] = useState(false);
