@@ -13,6 +13,7 @@ import {
   httpErrorResponse,
 } from "@/lib/creator-auth";
 import { requireRoomParticipant } from "@/lib/auth-helpers";
+import { roomIsClosed } from "@/lib/room-state";
 import { logAudit } from "@/lib/audit";
 
 export const runtime = "nodejs";
@@ -144,8 +145,15 @@ export async function DELETE(
       // Uploader path: must be a joined participant deleting their own upload.
       // A non-joined requester (including a cross-owner creator) gets 401
       // not_joined here, preserving the existing cross-owner hiding behavior.
+      // Closed rooms lock participants out of new writes (matches the upload
+      // route's `roomIsClosed` guard); the owner branch above stays
+      // archived-only, consistent with the pre-existing owner DELETE behavior
+      // (a facilitator may legitimately clean up files after a session ends).
       const auth = await requireRoomParticipant(req, id);
       if (!auth.ok) return auth.response;
+      if (await roomIsClosed(id)) {
+        return NextResponse.json({ error: "room_closed" }, { status: 410 });
+      }
       const participant = auth.participant;
 
       const file = await getRoomFileById(id, fileId);
