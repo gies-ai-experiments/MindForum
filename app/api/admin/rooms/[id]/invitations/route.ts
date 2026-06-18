@@ -1,8 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as Sentry from "@sentry/nextjs";
 import { requireCreator, httpErrorResponse, requireRoomOwner, requireJsonContent } from "@/lib/creator-auth";
-import { createInvitation, listInvitationsByRoom } from "@/lib/store";
+import { createInvitation, listInvitationsByRoom, type RoomInvitation } from "@/lib/store";
 import { sendInvitationEmail } from "@/lib/email";
+import { parseInviteBatch } from "@/lib/invite-batch";
+
+function baseUrlFrom(req: NextRequest): string {
+  return (
+    process.env.NEXTAUTH_URL ??
+    `${req.headers.get("x-forwarded-proto") ?? "https"}://${
+      req.headers.get("x-forwarded-host") ??
+      req.headers.get("host") ??
+      "localhost:3000"
+    }`
+  ).replace(/\/$/, "");
+}
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -30,6 +42,58 @@ export async function POST(
     const { id } = await params;
     const { actor } = await requireRoomOwner(id);
     const body = await req.json();
+
+    // Bulk path: { invites: [{ inviteeEmail, inviteeName }, ...] }
+    if (Array.isArray((body as { invites?: unknown }).invites)) {
+      const batch = parseInviteBatch(body);
+      const baseUrl = baseUrlFrom(req);
+
+      const created: RoomInvitation[] = [];
+      let skipped = 0;
+      for (const entry of batch) {
+        const result = await createInvitation({
+          roomId: id,
+          inviterId: actor.id,
+          inviteeEmail: entry.inviteeEmail,
+          inviteeName: entry.inviteeName,
+        });
+        if (result.ok) {
+          created.push(result.invitation);
+        } else if (result.error === "room_not_found") {
+          return NextResponse.json({ error: "room_not_found" }, { status: 404 });
+        } else {
+          skipped++; // already_invited
+        }
+      }
+
+      // Fire emails best-effort WITHOUT awaiting — never gate the response.
+      void Promise.allSettled(
+        created.map((inv) =>
+          sendInvitationEmail({
+            inviteeEmail: inv.inviteeEmail,
+            inviteeName: inv.inviteeName,
+            roomName: inv.roomName,
+            inviterName: inv.inviterName,
+            acceptUrl: `${baseUrl}/dashboard`,
+          })
+        )
+      ).then((settled) => {
+        for (const s of settled) {
+          if (
+            s.status === "fulfilled" &&
+            !s.value.ok &&
+            s.value.error !== "not_configured"
+          ) {
+            const msg = `[invitations] bulk email send failed: ${s.value.error}`;
+            console.error(msg);
+            Sentry.captureMessage(msg, "warning");
+          }
+        }
+      });
+
+      return NextResponse.json({ created, skipped }, { status: 201 });
+    }
+
     const { inviteeEmail, inviteeName } = body;
 
     if (!inviteeEmail || typeof inviteeEmail !== "string" || !inviteeEmail.includes("@")) {
@@ -52,14 +116,7 @@ export async function POST(
     }
 
     // Best-effort invitation email — never block invite creation on email.
-    const baseUrl = (
-      process.env.NEXTAUTH_URL ??
-      `${req.headers.get("x-forwarded-proto") ?? "https"}://${
-        req.headers.get("x-forwarded-host") ??
-        req.headers.get("host") ??
-        "localhost:3000"
-      }`
-    ).replace(/\/$/, "");
+    const baseUrl = baseUrlFrom(req);
 
     const emailResult = await sendInvitationEmail({
       inviteeEmail: result.invitation.inviteeEmail,
