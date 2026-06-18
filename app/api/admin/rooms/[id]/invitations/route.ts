@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
 import { requireCreator, httpErrorResponse, requireRoomOwner, requireJsonContent } from "@/lib/creator-auth";
 import { createInvitation, listInvitationsByRoom } from "@/lib/store";
+import { sendInvitationEmail } from "@/lib/email";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -48,6 +50,30 @@ export async function POST(
       const status = result.error === "room_not_found" ? 404 : 409;
       return NextResponse.json({ error: result.error }, { status });
     }
+
+    // Best-effort invitation email — never block invite creation on email.
+    const baseUrl = (
+      process.env.NEXTAUTH_URL ??
+      `${req.headers.get("x-forwarded-proto") ?? "https"}://${
+        req.headers.get("x-forwarded-host") ??
+        req.headers.get("host") ??
+        "localhost:3000"
+      }`
+    ).replace(/\/$/, "");
+
+    const emailResult = await sendInvitationEmail({
+      inviteeEmail: result.invitation.inviteeEmail,
+      inviteeName: result.invitation.inviteeName,
+      roomName: result.invitation.roomName,
+      inviterName: result.invitation.inviterName,
+      acceptUrl: `${baseUrl}/dashboard`,
+    });
+    if (!emailResult.ok && emailResult.error !== "not_configured") {
+      const msg = `[invitations] email send failed for ${result.invitation.id}: ${emailResult.error}`;
+      console.error(msg);
+      Sentry.captureMessage(msg, "warning");
+    }
+
     return NextResponse.json(result.invitation, { status: 201 });
   } catch (err) {
     return httpErrorResponse(err);
