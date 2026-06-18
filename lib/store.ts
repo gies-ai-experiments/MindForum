@@ -14,6 +14,7 @@ import { pool, query, tx } from "./db";
 import type { SortKey, Direction } from "./admin-sort";
 import { computeTallies, type OptionRow, type VoteRow } from "./poll-logic";
 import { isSourceType, validateSourceMeta, type SourceMeta, type SourceType } from "./context-sources";
+import { dedupeAndRankCandidates } from "./invite-candidates";
 
 export type Participant = {
   id: string;
@@ -1347,19 +1348,42 @@ export async function cancelInvitation(id: string, roomId: string): Promise<bool
   return (rowCount ?? 0) > 0;
 }
 
-export async function lookupCreators(q: string): Promise<{ id: string; email: string; displayName: string }[]> {
+export async function lookupInviteCandidates(
+  q: string,
+  ownerId: string,
+  excludeEmail?: string
+): Promise<{ id: string; email: string; displayName: string }[]> {
   if (!q || q.trim().length < 1) return [];
-  const { rows } = await query<{ id: string; email: string; display_name: string }>(
-    `SELECT id, email, display_name FROM allowlisted_creators
-     WHERE (lower(email) LIKE '%' || lower($1) || '%'
-            OR lower(display_name) LIKE '%' || lower($1) || '%')
-       AND disabled_at IS NULL
-       AND id != 'cr_super_admin'
-     ORDER BY display_name ASC
-     LIMIT 5`,
-    [q.trim()]
+  const like = q.trim();
+  const { rows } = await query<{
+    id: string;
+    email: string;
+    display_name: string;
+    source: "creator" | "participant";
+  }>(
+    `SELECT id, email, display_name, 'creator' AS source
+       FROM allowlisted_creators
+      WHERE (lower(email) LIKE '%' || lower($1) || '%'
+             OR lower(display_name) LIKE '%' || lower($1) || '%')
+        AND disabled_at IS NULL
+        AND id != 'cr_super_admin'
+     UNION ALL
+     SELECT 'p:' || lower(p.email) AS id, p.email, p.name AS display_name, 'participant' AS source
+       FROM participants p
+       JOIN rooms r ON r.id = p.room_id
+      WHERE r.owner_id = $2
+        AND (lower(p.email) LIKE '%' || lower($1) || '%'
+             OR lower(p.name) LIKE '%' || lower($1) || '%')
+     LIMIT 50`,
+    [like, ownerId]
   );
-  return rows.map((r) => ({ id: r.id, email: r.email, displayName: r.display_name }));
+  const pool = rows.map((r) => ({
+    id: r.id,
+    email: r.email,
+    displayName: r.display_name,
+    source: r.source,
+  }));
+  return dedupeAndRankCandidates(pool, like, 5, excludeEmail);
 }
 
 export type ArchivedFilter = "true" | "false" | "all";

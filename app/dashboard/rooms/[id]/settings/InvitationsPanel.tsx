@@ -178,7 +178,7 @@ export default function InvitationsPanel({
             <div style={{ flex: "1 1 200px", position: "relative" }}>
               <input
                 type="email"
-                placeholder="Email address"
+                placeholder="Email or name"
                 value={email}
                 onChange={(e) => handleEmailChange(e.target.value)}
                 onFocus={() =>
