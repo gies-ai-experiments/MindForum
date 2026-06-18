@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect } from "react";
+import InviteeAutocomplete from "@/app/dashboard/InviteeAutocomplete";
 
 type Invitation = {
   id: string;
@@ -11,12 +12,6 @@ type Invitation = {
   createdAt: number;
   acceptedAt: number | null;
   declinedAt: number | null;
-};
-
-type CreatorSuggestion = {
-  id: string;
-  email: string;
-  displayName: string;
 };
 
 function statusPill(status: string) {
@@ -54,12 +49,9 @@ export default function InvitationsPanel({
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
-  const [suggestions, setSuggestions] = useState<CreatorSuggestion[]>([]);
-  const [showSuggestions, setShowSuggestions] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     fetch(`/api/admin/rooms/${roomId}/invitations`)
@@ -68,37 +60,6 @@ export default function InvitationsPanel({
       .catch(() => {})
       .finally(() => setLoaded(true));
   }, [roomId]);
-
-  const handleEmailChange = useCallback((value: string) => {
-    setEmail(value);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (value.trim().length < 1) {
-      setSuggestions([]);
-      setShowSuggestions(false);
-      return;
-    }
-    debounceRef.current = setTimeout(async () => {
-      try {
-        const res = await fetch(
-          `/api/dashboard/creators/lookup?q=${encodeURIComponent(value.trim())}`
-        );
-        if (res.ok) {
-          const data = await res.json();
-          setSuggestions(data);
-          setShowSuggestions(data.length > 0);
-        }
-      } catch {
-        /* ignore */
-      }
-    }, 300);
-  }, []);
-
-  function selectSuggestion(s: CreatorSuggestion) {
-    setEmail(s.email);
-    setName(s.displayName);
-    setSuggestions([]);
-    setShowSuggestions(false);
-  }
 
   async function sendInvite(e: React.FormEvent) {
     e.preventDefault();
@@ -119,8 +80,6 @@ export default function InvitationsPanel({
         setInvitations((cur) => [data, ...cur]);
         setEmail("");
         setName("");
-        setSuggestions([]);
-        setShowSuggestions(false);
       } else {
         setErr(data.error ?? `HTTP ${res.status}`);
       }
@@ -175,68 +134,15 @@ export default function InvitationsPanel({
               alignItems: "flex-start",
             }}
           >
-            <div style={{ flex: "1 1 200px", position: "relative" }}>
-              <input
-                type="email"
-                placeholder="Email or name"
-                value={email}
-                onChange={(e) => handleEmailChange(e.target.value)}
-                onFocus={() =>
-                  suggestions.length > 0 && setShowSuggestions(true)
-                }
-                onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                disabled={busy}
-                autoComplete="off"
-                style={{
-                  width: "100%",
-                  padding: "6px 10px",
-                  fontSize: 14,
-                  border: "1px solid #d1d5db",
-                  borderRadius: 6,
-                  boxSizing: "border-box",
-                }}
-              />
-              {showSuggestions && suggestions.length > 0 && (
-                <div
-                  style={{
-                    position: "absolute",
-                    top: "100%",
-                    left: 0,
-                    right: 0,
-                    background: "white",
-                    border: "1px solid #e5e7eb",
-                    borderRadius: 6,
-                    boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
-                    zIndex: 10,
-                    maxHeight: 200,
-                    overflowY: "auto",
-                  }}
-                >
-                  {suggestions.map((s) => (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onMouseDown={() => selectSuggestion(s)}
-                      style={{
-                        display: "block",
-                        width: "100%",
-                        padding: "8px 10px",
-                        border: "none",
-                        background: "transparent",
-                        textAlign: "left",
-                        cursor: "pointer",
-                        fontSize: 13,
-                      }}
-                    >
-                      <span style={{ fontWeight: 600 }}>{s.displayName}</span>
-                      <span style={{ color: "#888", marginLeft: 8 }}>
-                        {s.email}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            <InviteeAutocomplete
+              email={email}
+              onEmailChange={setEmail}
+              onPick={(s) => {
+                setEmail(s.email);
+                setName(s.displayName);
+              }}
+              disabled={busy}
+            />
             <input
               type="text"
               placeholder="Name"
