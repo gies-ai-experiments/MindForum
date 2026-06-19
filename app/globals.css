@@ -1472,3 +1472,258 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: 
 }
 .dash-tour-btn { border-color: #E3E7ED; }
 .room-tour-btn:hover, .dash-tour-btn:hover { background: #F2F4F8; }
+
+/* ===================== Creator sign-in (split screen) ===================== */
+.signin {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  grid-template-columns: 44% 56%;
+  background: #ffffff;
+  color: #14305C;
+}
+
+/* ----- Left: auth panel ----- */
+.signin-auth {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 48px 7%;
+}
+.signin-auth__inner {
+  width: 100%;
+  max-width: 360px;
+  margin: 0 auto;
+  display: grid;
+  gap: 18px;
+  animation: signin-rise 600ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.signin-brand { display: flex; align-items: center; gap: 12px; }
+.signin-brand__mark {
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  background: var(--orange, #E84A27);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font: 800 21px/1 Montserrat, system-ui, sans-serif;
+  box-shadow: 0 6px 18px rgba(232, 74, 39, 0.32);
+}
+.signin-brand__word {
+  font: 700 27px/1 Montserrat, system-ui, sans-serif;
+  letter-spacing: -0.02em;
+  color: #14305C;
+}
+.signin-tagline {
+  margin: -6px 0 8px;
+  color: #6B7280;
+  font-size: 14px;
+}
+
+.signin-error {
+  margin: 0;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: #FEF2F2;
+  color: #B91C1C;
+  font-size: 13px;
+  border: 1px solid #FECACA;
+}
+
+.signin-ssoform { margin: 0; }
+.signin-cta {
+  width: 100%;
+  padding: 13px 20px;
+  border: none;
+  border-radius: 10px;
+  background: #14305C;
+  color: #fff;
+  font: 600 15px/1 system-ui, sans-serif;
+  cursor: pointer;
+  box-shadow: 0 8px 22px rgba(20, 48, 92, 0.22);
+  transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease;
+}
+.signin-cta:hover {
+  background: #16356A;
+  transform: translateY(-1px);
+  box-shadow: 0 12px 26px rgba(20, 48, 92, 0.28);
+}
+.signin-cta:active { transform: translateY(0); }
+.signin-cta:focus-visible {
+  outline: 3px solid rgba(232, 74, 39, 0.55);
+  outline-offset: 2px;
+}
+
+.signin-or {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #9CA3AF;
+  font-size: 12px;
+}
+.signin-or::before,
+.signin-or::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: #E5E7EB;
+}
+
+.signin-tokenform { display: grid; gap: 10px; margin: 0; }
+.signin-token {
+  width: 100%;
+  padding: 12px 14px;
+  box-sizing: border-box;
+  border: 1px solid #D1D5DB;
+  border-radius: 10px;
+  font: 14px ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: #fff;
+  color: #14305C;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+.signin-token::placeholder { font-family: system-ui, sans-serif; color: #9CA3AF; }
+.signin-token:focus {
+  outline: none;
+  border-color: #14305C;
+  box-shadow: 0 0 0 3px rgba(20, 48, 92, 0.12);
+}
+.signin-tokenbtn {
+  justify-self: start;
+  padding: 10px 18px;
+  border-radius: 9px;
+  background: #fff;
+  color: #14305C;
+  border: 1px solid #CBD5E1;
+  font: 600 14px/1 system-ui, sans-serif;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+.signin-tokenbtn:hover { background: #F8FAFC; border-color: #94A3B8; }
+.signin-tokenbtn:focus-visible {
+  outline: 3px solid rgba(232, 74, 39, 0.55);
+  outline-offset: 2px;
+}
+
+.signin-foot {
+  position: absolute;
+  left: 7%;
+  bottom: 28px;
+  margin: 0;
+  color: #9CA3AF;
+  font-size: 12px;
+}
+
+/* ----- Right: glassy prism panel (decorative) ----- */
+.signin-visual {
+  position: relative;
+  overflow: hidden;
+  background: radial-gradient(
+    120% 80% at 68% 6%,
+    #F5F7FB 0%,
+    #E9EDF5 55%,
+    #E3E8F1 100%
+  );
+}
+.signin-visual::before,
+.signin-visual::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(64px);
+  pointer-events: none;
+}
+.signin-visual::before {
+  width: 440px;
+  height: 440px;
+  top: -130px;
+  right: 2%;
+  background: radial-gradient(circle, rgba(79, 123, 232, 0.4), transparent 70%);
+}
+.signin-visual::after {
+  width: 380px;
+  height: 380px;
+  bottom: -140px;
+  left: 14%;
+  background: radial-gradient(circle, rgba(232, 74, 39, 0.18), transparent 70%);
+}
+
+.signin-stage {
+  position: absolute;
+  inset: 0;
+  animation: signin-drift 18s ease-in-out infinite alternate;
+}
+
+.signin-shard {
+  position: absolute;
+  border-radius: 7px;
+  filter: blur(0.4px);
+  mix-blend-mode: multiply;
+}
+/* top cluster — prisms entering from the top */
+.signin-shard--1 {
+  top: -7%; left: 44%; width: 96px; height: 380px;
+  transform: rotate(19deg);
+  background: linear-gradient(180deg, rgba(20, 48, 92, 0.82) 0%, rgba(79, 123, 232, 0.18) 100%);
+  clip-path: polygon(22% 0, 100% 9%, 78% 100%, 0 90%);
+}
+.signin-shard--2 {
+  top: -11%; left: 57%; width: 72px; height: 320px;
+  transform: rotate(16deg);
+  background: linear-gradient(180deg, rgba(111, 168, 255, 0.85) 0%, rgba(79, 123, 232, 0.1) 100%);
+  clip-path: polygon(20% 0, 100% 10%, 80% 100%, 0 88%);
+}
+.signin-shard--3 {
+  top: -4%; left: 38%; width: 50px; height: 300px;
+  transform: rotate(21deg);
+  background: linear-gradient(180deg, rgba(43, 58, 134, 0.85) 0%, rgba(43, 58, 134, 0.08) 100%);
+  clip-path: polygon(24% 0, 100% 8%, 76% 100%, 0 92%);
+}
+.signin-shard--4 {
+  top: 1%; left: 66%; width: 42px; height: 230px;
+  transform: rotate(13deg);
+  background: linear-gradient(180deg, rgba(232, 74, 39, 0.6) 0%, rgba(232, 74, 39, 0.05) 100%);
+  clip-path: polygon(22% 0, 100% 10%, 78% 100%, 0 88%);
+}
+/* bottom cluster — prisms entering from the bottom */
+.signin-shard--5 {
+  bottom: -9%; left: 28%; width: 90px; height: 350px;
+  transform: rotate(-19deg);
+  background: linear-gradient(0deg, rgba(79, 123, 232, 0.78) 0%, rgba(43, 58, 134, 0.08) 100%);
+  clip-path: polygon(22% 0, 100% 12%, 78% 100%, 0 88%);
+}
+.signin-shard--6 {
+  bottom: -13%; left: 42%; width: 66px; height: 320px;
+  transform: rotate(-16deg);
+  background: linear-gradient(0deg, rgba(43, 58, 134, 0.82) 0%, rgba(79, 123, 232, 0.08) 100%);
+  clip-path: polygon(20% 0, 100% 10%, 80% 100%, 0 90%);
+}
+.signin-shard--7 {
+  bottom: -6%; left: 20%; width: 46px; height: 260px;
+  transform: rotate(-21deg);
+  background: linear-gradient(0deg, rgba(111, 168, 255, 0.82) 0%, rgba(79, 123, 232, 0.08) 100%);
+  clip-path: polygon(24% 0, 100% 9%, 76% 100%, 0 92%);
+}
+
+@keyframes signin-rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes signin-drift {
+  from { transform: translate3d(0, 0, 0) rotate(0deg); }
+  to { transform: translate3d(-14px, -16px, 0) rotate(-1.2deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .signin-auth__inner { animation: none; }
+  .signin-stage { animation: none; }
+}
+
+@media (max-width: 860px) {
+  .signin { grid-template-columns: 1fr; }
+  .signin-visual { display: none; }
+  .signin-auth { padding: 40px 24px; justify-content: flex-start; padding-top: 14vh; }
+  .signin-foot { position: static; margin-top: 28px; }
+}
