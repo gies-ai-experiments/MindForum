@@ -1086,6 +1086,35 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: 
   grid-template-columns: 248px 1fr;
   background: #EEF1F6;
   color: var(--text);
+  position: relative;
+}
+
+/* Drag handle on the sidebar's right edge (desktop only — see @media below). */
+.dash-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  transform: translateX(-5px);
+  cursor: col-resize;
+  z-index: 5;
+  touch-action: none;
+}
+.dash-resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 5px;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.12);
+  transition: background 140ms ease, width 140ms ease;
+}
+.dash-resizer:hover::after,
+.dash-resizer:active::after {
+  left: 4px;
+  width: 2px;
+  background: var(--orange);
 }
 
 /* ----- Sidebar ----- */

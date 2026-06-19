@@ -7,6 +7,7 @@ import { adminListRoomsWithActivity, listPendingInvitationsByEmail } from "@/lib
 import SignInForm from "./SignInForm";
 import SignOutButton from "./SignOutButton";
 import CreateRoomForm from "./CreateRoomForm";
+import ResizableDash from "./ResizableDash";
 import PendingInvitations from "./PendingInvitations";
 import FeatureTour from "@/app/components/FeatureTour";
 import TourReplayButton from "@/app/components/TourReplayButton";
@@ -167,7 +168,7 @@ export default async function DashboardPage({
     [...allRows].sort((a, b) => b[key] - a[key]).slice(0, 7).map((r) => r[key]);
 
   return (
-    <div className="dash">
+    <ResizableDash sidebar={
       <aside className="dash-sidebar">
         <div className="dash-brand">
           <span className="dash-brand__mark">M</span>
@@ -215,7 +216,7 @@ export default async function DashboardPage({
           <SignOutButton className="dash-signout" />
         </div>
       </aside>
-
+    }>
       <div className="dash-main">
         <header className="dash-topbar">
           <div className="dash-topbar__title">
@@ -406,6 +407,6 @@ export default async function DashboardPage({
           </section>
         </div>
       </div>
-    </div>
+    </ResizableDash>
   );
 }
