@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { MAX_SYSTEM_PROMPT_CHARS } from "@/lib/limits";
 import DashboardAttachButton, {
   type PendingAttachment,
@@ -27,6 +28,10 @@ export default function CreateRoomForm() {
   const [inviteName, setInviteName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<{ id: string; name: string } | null>(
+    null
+  );
+  const router = useRouter();
 
   function addInvite() {
     const email = inviteEmail.trim();
@@ -47,6 +52,7 @@ export default function CreateRoomForm() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setSuccess(null);
     if (!slugValid) {
       setError("Slug must be 3–40 characters, lowercase letters / digits / hyphens.");
       return;
@@ -137,7 +143,18 @@ export default function CreateRoomForm() {
             /* non-fatal */
           }
         }
-        window.location.href = `/dashboard/rooms/${data.id}/settings`;
+        setSuccess({ id: data.id, name: data.name ?? name.trim() });
+        // Reset the form for another create.
+        setSlug("");
+        setName("");
+        setSystemPrompt("");
+        setPending([]);
+        setPendingInvites([]);
+        setInviteEmail("");
+        setInviteName("");
+        // Re-fetch the server-rendered dashboard so the new room shows in the
+        // "Your rooms" list and the counts update — without leaving the page.
+        router.refresh();
         return;
       }
       const body = await res.json().catch(() => ({}));
@@ -410,6 +427,29 @@ export default function CreateRoomForm() {
       {error && (
         <p role="alert" style={{ color: "#c00", margin: 0, fontSize: 13 }}>
           {error}
+        </p>
+      )}
+
+      {success && (
+        <p
+          role="status"
+          style={{
+            margin: 0,
+            fontSize: 13,
+            color: "#166534",
+            background: "#DCFCE7",
+            border: "1px solid #bbf7d0",
+            borderRadius: 6,
+            padding: "8px 10px",
+          }}
+        >
+          ✓ Room “{success.name}” created.{" "}
+          <a
+            href={`/dashboard/rooms/${success.id}/settings`}
+            style={{ color: "#166534", fontWeight: 600 }}
+          >
+            Open ↗
+          </a>
         </p>
       )}
 
