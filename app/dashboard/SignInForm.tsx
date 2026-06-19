@@ -1,5 +1,6 @@
 import { signInAzure } from "@/lib/nextauth-actions";
 import { isAzureConfigured } from "@/lib/auth-config";
+import SignInStage from "./SignInStage";
 
 export default function SignInForm({
   error,
@@ -22,7 +23,7 @@ export default function SignInForm({
   const azureEnabled = isAzureConfigured();
 
   return (
-    <main className="signin">
+    <SignInStage>
       <section className="signin-auth">
         <div className="signin-auth__inner">
           <div className="signin-brand">
@@ -88,7 +89,8 @@ export default function SignInForm({
           <span className="signin-shard signin-shard--6" />
           <span className="signin-shard signin-shard--7" />
         </div>
+        <span className="signin-bloom" />
       </aside>
-    </main>
+    </SignInStage>
   );
 }
