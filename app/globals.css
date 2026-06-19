@@ -1716,9 +1716,43 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: 
   to { transform: translate3d(-14px, -16px, 0) rotate(-1.2deg); }
 }
 
+/* ----- Submit reaction (right panel) ----- */
+.signin-bloom {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(
+    58% 50% at 60% 44%,
+    rgba(255, 255, 255, 0.55),
+    transparent 70%
+  );
+  transition: opacity 1.1s ease;
+}
+.signin-visual::before,
+.signin-visual::after {
+  transition: transform 1.6s cubic-bezier(0.16, 0.84, 0.3, 1), opacity 1.6s ease;
+}
+
+.signin.is-submitting .signin-stage {
+  animation: signin-launch 1.6s cubic-bezier(0.16, 0.84, 0.3, 1) forwards;
+}
+.signin.is-submitting .signin-visual::before { transform: scale(1.45); }
+.signin.is-submitting .signin-visual::after { transform: scale(1.35); }
+.signin.is-submitting .signin-bloom { opacity: 1; }
+
+@keyframes signin-launch {
+  0% { transform: scale(1) translate3d(0, 0, 0); }
+  100% { transform: scale(1.08) translate3d(-18px, -24px, 0); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .signin-auth__inner { animation: none; }
   .signin-stage { animation: none; }
+  .signin.is-submitting .signin-stage { animation: none; }
+  .signin-visual::before,
+  .signin-visual::after,
+  .signin-bloom { transition: none; }
 }
 
 @media (max-width: 860px) {
