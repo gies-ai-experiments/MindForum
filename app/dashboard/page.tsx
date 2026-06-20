@@ -9,6 +9,7 @@ import SignOutButton from "./SignOutButton";
 import CreateRoomForm from "./CreateRoomForm";
 import ResizableDash from "./ResizableDash";
 import PendingInvitations from "./PendingInvitations";
+import ApiKeysPanel from "./ApiKeysPanel";
 import FeatureTour from "@/app/components/FeatureTour";
 import TourReplayButton from "@/app/components/TourReplayButton";
 import { DASHBOARD_TOUR_STEPS, TOUR_KEYS } from "@/lib/tour-steps";
@@ -403,6 +404,13 @@ export default async function DashboardPage({
             </div>
             <div className="dash-panel__body">
               <CreateRoomForm />
+            </div>
+          </section>
+
+          {/* ---- API keys ---- */}
+          <section className="dash-panel" id="api-keys">
+            <div className="dash-panel__body">
+              <ApiKeysPanel />
             </div>
           </section>
         </div>
