@@ -268,3 +268,25 @@ CREATE UNIQUE INDEX IF NOT EXISTS room_invitations_room_email_uniq
 
 INSERT INTO schema_migrations (version) VALUES (13)
   ON CONFLICT (version) DO NOTHING;
+
+-- v14: programmatic API keys. Per-creator bearer tokens for the /api/v1 surface
+-- (create rooms, send invites server-to-server). Store sha256(plaintext) only;
+-- the bearer token IS the plaintext (mirrors allowlisted_creators.token_hash).
+-- Soft-revoke via revoked_at so the audit trail survives.
+CREATE TABLE IF NOT EXISTS api_keys (
+  id            TEXT PRIMARY KEY,
+  creator_id    TEXT NOT NULL REFERENCES allowlisted_creators(id) ON DELETE CASCADE,
+  name          TEXT NOT NULL,
+  key_hash      TEXT NOT NULL,
+  key_last_four TEXT NOT NULL,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_used_at  TIMESTAMPTZ,
+  revoked_at    TIMESTAMPTZ,
+  revoked_by    TEXT
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS api_keys_key_hash_uniq ON api_keys (key_hash);
+CREATE INDEX        IF NOT EXISTS api_keys_creator_idx   ON api_keys (creator_id);
+
+INSERT INTO schema_migrations (version) VALUES (14)
+  ON CONFLICT (version) DO NOTHING;
