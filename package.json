@@ -10,6 +10,7 @@
     "test": "node --import tsx --test lib/*.test.mjs"
   },
   "dependencies": {
+    "@azure/communication-email": "^1.1.0",
     "@mozilla/readability": "^0.6.0",
     "@sentry/nextjs": "^10.53.1",
     "driver.js": "^1.4.0",

@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { MAX_SYSTEM_PROMPT_CHARS } from "@/lib/limits";
 import DashboardAttachButton, {
   type PendingAttachment,
 } from "./DashboardAttachButton";
+import InviteeAutocomplete from "./InviteeAutocomplete";
 
 const SLUG_RE = /^[a-z0-9-]{3,40}$/;
 
@@ -19,8 +21,30 @@ export default function CreateRoomForm() {
   const [name, setName] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [pending, setPending] = useState<PendingAttachment[]>([]);
+  const [pendingInvites, setPendingInvites] = useState<
+    { email: string; name: string }[]
+  >([]);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteName, setInviteName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<{ id: string; name: string } | null>(
+    null
+  );
+  const router = useRouter();
+
+  function addInvite() {
+    const email = inviteEmail.trim();
+    const name = inviteName.trim();
+    if (!email.includes("@") || !name) return;
+    if (
+      pendingInvites.some((p) => p.email.toLowerCase() === email.toLowerCase())
+    )
+      return;
+    setPendingInvites((p) => [...p, { email, name }]);
+    setInviteEmail("");
+    setInviteName("");
+  }
 
   const slugValid = SLUG_RE.test(slug);
   const promptTooLong = systemPrompt.length > MAX_SYSTEM_PROMPT_CHARS;
@@ -28,6 +52,7 @@ export default function CreateRoomForm() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setSuccess(null);
     if (!slugValid) {
       setError("Slug must be 3–40 characters, lowercase letters / digits / hyphens.");
       return;
@@ -99,7 +124,37 @@ export default function CreateRoomForm() {
             `Room created, but some attachments failed:\n${failures.join("\n")}`
           );
         }
-        window.location.href = `/dashboard/rooms/${data.id}/settings`;
+        // Fire the queued invites in one fast call (server sends emails in the
+        // background). Non-fatal: the room exists; the creator can finish
+        // inviting from the settings panel if this request fails.
+        if (pendingInvites.length > 0) {
+          try {
+            await fetch(`/api/admin/rooms/${data.id}/invitations`, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                invites: pendingInvites.map((p) => ({
+                  inviteeEmail: p.email,
+                  inviteeName: p.name,
+                })),
+              }),
+            });
+          } catch {
+            /* non-fatal */
+          }
+        }
+        setSuccess({ id: data.id, name: data.name ?? name.trim() });
+        // Reset the form for another create.
+        setSlug("");
+        setName("");
+        setSystemPrompt("");
+        setPending([]);
+        setPendingInvites([]);
+        setInviteEmail("");
+        setInviteName("");
+        // Re-fetch the server-rendered dashboard so the new room shows in the
+        // "Your rooms" list and the counts update — without leaving the page.
+        router.refresh();
         return;
       }
       const body = await res.json().catch(() => ({}));
@@ -231,6 +286,111 @@ export default function CreateRoomForm() {
         )}
       </div>
 
+      <div style={{ display: "grid", gap: 6, justifyItems: "start" }}>
+        <span style={{ fontSize: 13, color: "#374151" }}>
+          Invite participants{" "}
+          <span style={{ color: "#888" }}>
+            (optional — emails go out right after the room is created)
+          </span>
+        </span>
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            flexWrap: "wrap",
+            alignItems: "flex-start",
+            width: "100%",
+          }}
+        >
+          <InviteeAutocomplete
+            email={inviteEmail}
+            onEmailChange={setInviteEmail}
+            onPick={(s) => {
+              setInviteEmail(s.email);
+              setInviteName(s.displayName);
+            }}
+            disabled={busy}
+          />
+          <input
+            type="text"
+            placeholder="Name"
+            value={inviteName}
+            onChange={(e) => setInviteName(e.target.value)}
+            disabled={busy}
+            style={{
+              flex: "1 1 150px",
+              padding: "6px 10px",
+              fontSize: 14,
+              border: "1px solid #d1d5db",
+              borderRadius: 6,
+            }}
+          />
+          <button
+            type="button"
+            onClick={addInvite}
+            disabled={busy || !inviteEmail.includes("@") || !inviteName.trim()}
+            style={{
+              padding: "6px 16px",
+              fontSize: 13,
+              fontWeight: 600,
+              background: "#1f2937",
+              color: "white",
+              border: "none",
+              borderRadius: 6,
+              cursor: "pointer",
+            }}
+          >
+            Add
+          </button>
+        </div>
+        {pendingInvites.length > 0 && (
+          <ul
+            style={{
+              margin: 0,
+              padding: 0,
+              listStyle: "none",
+              display: "grid",
+              gap: 4,
+              fontSize: 13,
+            }}
+          >
+            {pendingInvites.map((inv, i) => (
+              <li
+                key={inv.email}
+                style={{ display: "flex", alignItems: "center", gap: 6 }}
+              >
+                <span
+                  style={{
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    maxWidth: 480,
+                  }}
+                >
+                  {inv.name} &lt;{inv.email}&gt;
+                </span>
+                <button
+                  type="button"
+                  aria-label={`Remove ${inv.email}`}
+                  onClick={() =>
+                    setPendingInvites((p) => p.filter((_, j) => j !== i))
+                  }
+                  style={{
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    color: "#888",
+                    padding: 0,
+                  }}
+                >
+                  ✕
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
       <label style={{ display: "grid", gap: 4 }}>
         <span
           style={{
@@ -267,6 +427,29 @@ export default function CreateRoomForm() {
       {error && (
         <p role="alert" style={{ color: "#c00", margin: 0, fontSize: 13 }}>
           {error}
+        </p>
+      )}
+
+      {success && (
+        <p
+          role="status"
+          style={{
+            margin: 0,
+            fontSize: 13,
+            color: "#166534",
+            background: "#DCFCE7",
+            border: "1px solid #bbf7d0",
+            borderRadius: 6,
+            padding: "8px 10px",
+          }}
+        >
+          ✓ Room “{success.name}” created.{" "}
+          <a
+            href={`/dashboard/rooms/${success.id}/settings`}
+            style={{ color: "#166534", fontWeight: 600 }}
+          >
+            Open ↗
+          </a>
         </p>
       )}
 
