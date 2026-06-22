@@ -34,7 +34,9 @@ export type AuditAction =
   | "participant.remove"
   | "file.upload"
   | "file.delete"
-  | "file.toggle_selected";
+  | "file.toggle_selected"
+  | "api_key.create"
+  | "api_key.revoke";
 
 /**
  * Append a row to audit_log. Never throws on the caller's behalf — failures

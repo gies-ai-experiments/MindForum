@@ -65,7 +65,7 @@ function roomGuidanceBlock(systemPrompt: string): string {
 }
 
 function chatSystemPrompt(files: DocLike[], systemPrompt: string, recapBlock = ""): string {
-  return `You are an AI collaborator in a MindForum room — a shared workspace where a small group brainstorms together in one chat thread. Participants can upload documents that are shared with the group. You only respond when someone addresses you with \`@ai\`; otherwise you stay silent. In the history, each participant's message is prefixed with their name (e.g., "Alice: ..."); your reply is visible to everyone. Keep replies concise. Reference shared files when relevant. Stay grounded in what people have actually said and in the files; don't invent context.${roomGuidanceBlock(systemPrompt)}${recapBlock}${summaryBlock(files)}`;
+  return `You are an AI collaborator in a MindForum room — a shared workspace where a small group brainstorms together in one chat thread. Participants can upload documents that are shared with the group. You only respond when someone addresses you with \`@ai\`; otherwise you stay silent. In the history, each participant's message is prefixed with their name (e.g., "Alice: ..."); your reply is visible to everyone. Write in clear, complete, grammatically correct sentences, and format your reply as clean Markdown — short paragraphs, bullet lists for enumerations, and **bold** for key terms; use headings only in genuinely long replies. Match the structure to the length: a one- or two-sentence answer needs no bullets or headings. Keep replies concise. Reference shared files when relevant. Stay grounded in what people have actually said and in the files; don't invent context.${roomGuidanceBlock(systemPrompt)}${recapBlock}${summaryBlock(files)}`;
 }
 
 export async function chatReply(
@@ -377,7 +377,7 @@ export async function updateRollingSummary(args: {
   const system = `You maintain a rolling catch-up summary for a MindForum brainstorming room. A late joiner reads this summary to get oriented.
 
 Goals, in order:
-1. Keep the summary tight and concrete (5-8 bullets, one short sentence each).
+1. Keep the summary tight and concrete (5-8 bullets, one short, complete, grammatically correct sentence each). Write plain prose — these bullets render as plain text, so do not use Markdown syntax.
 2. Maintain a "pinned facts" list: people who participated, decisions reached, and files referenced. Pinned items must NOT be paraphrased away in future rounds — preserve them across updates.
 3. Fold new (delta) messages into the prior summary. Drop bullets that are now stale; merge near-duplicates; promote anything important to a pinned fact.
 4. Never invent participants, decisions, or files. If something was just opinion or a question, do not call it a decision.

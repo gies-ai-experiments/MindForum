@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Fragment } from "react";
+import UserApiKeys from "./UserApiKeys";
 
 type Row = {
   id: string;
@@ -33,6 +34,7 @@ export default function UsersTable({ initialRows }: { initialRows: Row[] }) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [keysFor, setKeysFor] = useState<string | null>(null);
   const [reveal, setReveal] = useState<{
     title: string;
     creator: { id: string; email: string; displayName: string };
@@ -278,8 +280,8 @@ export default function UsersTable({ initialRows }: { initialRows: Row[] }) {
                 const disabled = r.disabledAt !== null;
                   const isEntraId = r.createdBy === null;
                   return (
+                <Fragment key={r.id}>
                 <tr
-                  key={r.id}
                   id={r.id}
                   style={{ borderBottom: "1px solid #f0f0f0" }}
                 >
@@ -368,9 +370,24 @@ export default function UsersTable({ initialRows }: { initialRows: Row[] }) {
                       >
                         Delete
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => setKeysFor(keysFor === r.id ? null : r.id)}
+                        style={btn("primary")}
+                      >
+                        {keysFor === r.id ? "Hide keys" : "Keys"}
+                      </button>
                     </div>
                   </td>
                 </tr>
+                {keysFor === r.id && (
+                  <tr className="admin-api-keys-row">
+                    <td colSpan={8} style={{ padding: 8, background: "#fafafa" }}>
+                      <UserApiKeys creatorId={r.id} />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               );
             })}
           </tbody>
