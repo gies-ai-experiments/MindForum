@@ -71,6 +71,7 @@ export type Room = {
   archivedAt: number | null;
   systemPrompt: string;
   closedAt: number | null;
+  mentionRemindersEnabled: boolean;
   participants: Participant[];
   messages: Message[];
   files: RoomFile[];
@@ -244,6 +245,7 @@ export async function createRoom(
     archivedAt: r.archived_at ? r.archived_at.getTime() : null,
     createdAt: r.created_at.getTime(),
     closedAt: null,
+    mentionRemindersEnabled: true,
     participants: [],
     messages: [],
     files: [],
@@ -316,6 +318,7 @@ export async function createRoomBySlug(input: {
         archivedAt: r.archived_at ? r.archived_at.getTime() : null,
         closedAt: null,
         createdAt: r.created_at.getTime(),
+        mentionRemindersEnabled: true,
         participants: [],
         messages: [],
         files: [],
@@ -337,8 +340,10 @@ export async function getRoom(id: string): Promise<Room | null> {
       archived_at: Date | null;
       created_at: Date;
       closed_at: Date | null;
+      mention_reminders_enabled: boolean;
     }>(
-      `SELECT id, name, system_prompt, created_by_id, owner_id, archived_at, created_at, closed_at
+      `SELECT id, name, system_prompt, created_by_id, owner_id, archived_at, created_at, closed_at,
+              mention_reminders_enabled
        FROM rooms WHERE id = $1`,
       [id]
     );
@@ -396,6 +401,7 @@ export async function getRoom(id: string): Promise<Room | null> {
       archivedAt: r.archived_at ? r.archived_at.getTime() : null,
       createdAt: r.created_at.getTime(),
       closedAt: r.closed_at ? r.closed_at.getTime() : null,
+      mentionRemindersEnabled: r.mention_reminders_enabled,
       participants: participantsQ.rows.map(toParticipant),
       messages: messagesQ.rows.map(toMessage),
       files: filesQ.rows.map(toRoomFile),
@@ -2257,6 +2263,36 @@ export async function closeExpiredPolls(roomId: string): Promise<ClosedPollView[
 }
 
 // --- Mention reminders (no-reply nudge) ---
+
+/** Whether a room currently has the no-reply mention reminder feature enabled. */
+export async function isMentionRemindersEnabled(roomId: string): Promise<boolean> {
+  const { rows } = await query<{ mention_reminders_enabled: boolean }>(
+    `SELECT mention_reminders_enabled FROM rooms WHERE id = $1`,
+    [roomId],
+  );
+  return rows[0]?.mention_reminders_enabled ?? false;
+}
+
+/** Owner/super-admin toggle. Disabling also cancels the room's already-armed
+ *  pending reminders (status pending -> skipped) so none fire after the flip. */
+export async function setMentionRemindersEnabled(
+  roomId: string,
+  enabled: boolean,
+): Promise<void> {
+  await tx(async (c) => {
+    await c.query(
+      `UPDATE rooms SET mention_reminders_enabled = $2 WHERE id = $1`,
+      [roomId, enabled],
+    );
+    if (!enabled) {
+      await c.query(
+        `UPDATE mention_reminders SET status='skipped'
+         WHERE room_id = $1 AND status = 'pending'`,
+        [roomId],
+      );
+    }
+  });
+}
 
 /** Insert one pending reminder per mentioned person. due_at = createdAt + delay. */
 export async function armMentionReminders(input: {

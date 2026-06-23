@@ -319,3 +319,12 @@ CREATE INDEX IF NOT EXISTS mention_reminders_resolve_idx
 
 INSERT INTO schema_migrations (version) VALUES (15)
   ON CONFLICT (version) DO NOTHING;
+
+-- v16: per-room on/off switch for the no-reply mention reminder feature.
+-- Default TRUE preserves the v15 behavior (reminders on for existing rooms);
+-- owners/super-admins flip it from room settings. Disabling also cancels the
+-- room's already-armed pending reminders (see setMentionRemindersEnabled).
+ALTER TABLE rooms ADD COLUMN IF NOT EXISTS mention_reminders_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+
+INSERT INTO schema_migrations (version) VALUES (16)
+  ON CONFLICT (version) DO NOTHING;
