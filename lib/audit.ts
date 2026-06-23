@@ -29,6 +29,8 @@ export type AuditAction =
   | "room.restore"
   | "room.hard_delete"
   | "room.transfer"
+  | "room_admin.grant"
+  | "room_admin.revoke"
   | "participant.kick"
   | "participant.mute"
   | "participant.remove"
