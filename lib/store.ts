@@ -40,7 +40,7 @@ export type Message = {
   authorName: string;
   content: string;
   createdAt: number;
-  kind?: "chat" | "brief" | "system";
+  kind?: "chat" | "brief" | "system" | "summary";
   reactions?: ReactionSummary[];
   editedAt?: number | null;
   groundingFiles?: string[] | null;
