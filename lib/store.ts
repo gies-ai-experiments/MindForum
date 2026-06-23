@@ -507,6 +507,18 @@ export async function getParticipant(
   return toParticipant(rows[0]);
 }
 
+/** Active (joinable, non-muted, non-removed) participants for mention matching. */
+export async function getActiveParticipants(
+  roomId: string,
+): Promise<{ id: string; name: string; email: string }[]> {
+  const { rows } = await query<{ id: string; name: string; email: string }>(
+    `SELECT id, name, email FROM participants
+     WHERE room_id = $1 AND removed_at IS NULL AND muted_at IS NULL`,
+    [roomId],
+  );
+  return rows;
+}
+
 export async function setParticipantLastSeen(
   roomId: string,
   participantId: string,
@@ -2241,4 +2253,50 @@ export async function closeExpiredPolls(roomId: string): Promise<ClosedPollView[
   const closed = await getClosedPollsForRoom(roomId, 100);
   const closedIds = new Set(rows.map(r => r.id));
   return closed.filter(p => closedIds.has(p.id));
+}
+
+// --- Mention reminders (no-reply nudge) ---
+
+/** Insert one pending reminder per mentioned person. due_at = createdAt + delay. */
+export async function armMentionReminders(input: {
+  roomId: string;
+  messageId: string;
+  createdAt: number; // ms epoch
+  author: { id: string; name: string; email: string };
+  mentioned: { id: string; name: string }[];
+  delayMs: number;
+}): Promise<void> {
+  if (input.mentioned.length === 0) return;
+  const dueMs = input.createdAt + input.delayMs;
+  await tx(async (c) => {
+    for (const m of input.mentioned) {
+      await c.query(
+        `INSERT INTO mention_reminders
+           (id, room_id, message_id, author_id, author_name, author_email,
+            mentioned_id, mentioned_name, created_at, due_at, status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,
+                 to_timestamp($9 / 1000.0), to_timestamp($10 / 1000.0), 'pending')`,
+        [
+          nanoid(12), input.roomId, input.messageId,
+          input.author.id, input.author.name, input.author.email,
+          m.id, m.name, input.createdAt, dueMs,
+        ],
+      );
+    }
+  });
+}
+
+/** The poster spoke -> resolve all of their pending incoming mentions in the room. */
+export async function resolveMentionRemindersFor(
+  roomId: string,
+  posterId: string,
+): Promise<number> {
+  const { rows } = await query<{ id: string }>(
+    `UPDATE mention_reminders
+       SET status='resolved', resolved_at=NOW()
+     WHERE room_id=$1 AND mentioned_id=$2 AND status='pending'
+     RETURNING id`,
+    [roomId, posterId],
+  );
+  return rows.length;
 }
