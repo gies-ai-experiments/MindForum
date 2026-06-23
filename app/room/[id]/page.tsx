@@ -97,6 +97,7 @@ type Snapshot = {
   name: string;
   systemPrompt?: string;
   archived?: boolean;
+  coAdminEmails?: string[];
   participants: Participant[];
   messages: Msg[];
   files: PublicFile[];
@@ -138,6 +139,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
   const [canManage, setCanManage] = useState(false);
+  const [isOwner, setIsOwner] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [previewFileId, setPreviewFileId] = useState<string | null>(null);
   const [previewData, setPreviewData] = useState<FilePreview | null>(null);
@@ -265,6 +267,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
           participantId: string | null;
           readOnly?: boolean;
           canManage?: boolean;
+          isOwner?: boolean;
           catchupHint?: { should: false } | { should: true; since: number | null };
         } = await res.json().catch(() => ({ participantId: null }));
         // A creator opening an archived room they own gets a read-only
@@ -274,6 +277,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
         if (data.participantId || data.readOnly) {
           setParticipantId(data.participantId ?? "");
           setCanManage(!!data.canManage);
+          setIsOwner(!!data.isOwner);
           setJoined(true);
           if (data.catchupHint?.should) {
             setCatchupOpen(true);
@@ -327,6 +331,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
         participantId: string | null;
         readOnly?: boolean;
         canManage?: boolean;
+        isOwner?: boolean;
         catchupHint?: { should: false } | { should: true; since: number | null };
       } = await res.json().catch(() => ({ participantId: "" }));
       try {
@@ -335,6 +340,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
       } catch {}
       setParticipantId(joinJson.participantId ?? "");
       setCanManage(!!joinJson.canManage);
+      setIsOwner(!!joinJson.isOwner);
       setJoined(true);
 
       if (joinJson.catchupHint?.should) {
@@ -363,6 +369,10 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
     es.addEventListener("participant_joined", (ev) => {
       const p: Participant = JSON.parse((ev as MessageEvent).data);
       setState((s) => (s ? { ...s, participants: upsertById(s.participants, p) } : s));
+    });
+    es.addEventListener("co_admin_changed", (ev) => {
+      const d = JSON.parse((ev as MessageEvent).data) as { coAdminEmails: string[] };
+      setState((s) => (s ? { ...s, coAdminEmails: d.coAdminEmails } : s));
     });
     es.addEventListener("message_added", (ev) => {
       const m: Msg = JSON.parse((ev as MessageEvent).data);
@@ -844,6 +854,29 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
     }
   }
 
+  // Owner-only: promote/demote a participant to co-admin. The co_admin_changed
+  // broadcast updates the badge for everyone (including us), so no local mutate.
+  async function toggleCoAdmin(pid: string, isCo: boolean) {
+    if (isCo) {
+      const list = await fetch(`/api/admin/rooms/${id}/co-admins`).then((r) =>
+        r.ok ? r.json() : [],
+      );
+      const p = state?.participants.find((x) => x.id === pid);
+      const match = (list as { creatorId: string; email: string }[]).find(
+        (x) => p && x.email.toLowerCase() === p.email.toLowerCase(),
+      );
+      if (match) {
+        await fetch(`/api/admin/rooms/${id}/co-admins/${match.creatorId}`, { method: "DELETE" });
+      }
+    } else {
+      await fetch(`/api/admin/rooms/${id}/co-admins`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ participantId: pid }),
+      });
+    }
+  }
+
   function copyLink() {
     navigator.clipboard.writeText(window.location.href);
     setLinkCopied(true);
@@ -888,15 +921,50 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
 
   const participantsListNode = (
     <div style={{ padding: isNarrow ? 12 : 0, overflowY: "auto", height: "100%" }}>
-      {state.participants.map((p) => (
-        <div
-          key={p.id}
-          style={{ display: "flex", gap: 8, alignItems: "center", padding: "6px 0" }}
-        >
-          <span style={{ width: 8, height: 8, borderRadius: 8, background: "#22c55e" }} />
-          <span>{p.name}</span>
-        </div>
-      ))}
+      {state.participants.map((p) => {
+        const isCo = (state.coAdminEmails ?? []).includes(p.email.toLowerCase());
+        return (
+          <div
+            key={p.id}
+            style={{ display: "flex", gap: 8, alignItems: "center", padding: "6px 0" }}
+          >
+            <span style={{ width: 8, height: 8, borderRadius: 8, background: "#22c55e" }} />
+            <span>{p.name}</span>
+            {isCo && (
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  color: "#166534",
+                  background: "#DCFCE7",
+                  borderRadius: 10,
+                  padding: "1px 7px",
+                }}
+              >
+                CO-ADMIN
+              </span>
+            )}
+            {isOwner && p.id !== participantIdRef.current && (
+              <button
+                type="button"
+                onClick={() => toggleCoAdmin(p.id, isCo)}
+                style={{
+                  marginLeft: "auto",
+                  fontSize: 11,
+                  padding: "2px 8px",
+                  border: "1px solid var(--border)",
+                  borderRadius: 4,
+                  background: "transparent",
+                  color: "var(--navy)",
+                  cursor: "pointer",
+                }}
+              >
+                {isCo ? "Remove admin" : "Make admin"}
+              </button>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 
