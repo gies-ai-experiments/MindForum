@@ -14,6 +14,7 @@ import {
   getActiveParticipants,
   resolveMentionRemindersFor,
   armMentionReminders,
+  isMentionRemindersEnabled,
   type Message,
 } from "@/lib/store";
 import * as Sentry from "@sentry/nextjs";
@@ -109,7 +110,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     const roomParticipants = await getActiveParticipants(id);
     await resolveMentionRemindersFor(id, participant.id);
     const mentioned = extractDirectMentions(content, roomParticipants, participant.id);
-    if (mentioned.length > 0) {
+    if (mentioned.length > 0 && (await isMentionRemindersEnabled(id))) {
       await armMentionReminders({
         roomId: id,
         messageId: msg.id,

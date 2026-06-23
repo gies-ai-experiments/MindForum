@@ -4,6 +4,7 @@ import { getRoom } from "@/lib/store";
 import { listAuditForRoom } from "@/lib/audit";
 import GeneralEditor from "./GeneralEditor";
 import ArchiveControl from "./ArchiveControl";
+import MentionReminderToggle from "./MentionReminderToggle";
 import FilesPanel from "./FilesPanel";
 import ParticipantsPanel from "./ParticipantsPanel";
 import InvitationsPanel from "./InvitationsPanel";
@@ -112,6 +113,15 @@ export default async function RoomSettingsPage({
         <ParticipantsPanel
           roomId={room.id}
           participants={room.participants}
+          archived={archived}
+        />
+      </section>
+
+      <section style={{ marginBottom: 32 }}>
+        <h2 style={{ fontSize: 16, marginBottom: 8 }}>Mention reminders</h2>
+        <MentionReminderToggle
+          roomId={room.id}
+          initialEnabled={room.mentionRemindersEnabled}
           archived={archived}
         />
       </section>

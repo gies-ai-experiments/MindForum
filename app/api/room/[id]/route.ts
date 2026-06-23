@@ -7,7 +7,7 @@ import {
   requireJsonContent,
   requireRoomOwner,
 } from "@/lib/creator-auth";
-import { hardDeleteRoom } from "@/lib/store";
+import { hardDeleteRoom, setMentionRemindersEnabled } from "@/lib/store";
 import { logAudit } from "@/lib/audit";
 import { query } from "@/lib/db";
 import { broadcast } from "@/lib/sse";
@@ -36,13 +36,18 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     const body = await req.json().catch(() => ({}));
     const wantsName = typeof body.name === "string";
     const wantsPrompt = typeof body.systemPrompt === "string";
-    if (!wantsName && !wantsPrompt) {
+    const wantsReminders = typeof body.mentionRemindersEnabled === "boolean";
+    if (!wantsName && !wantsPrompt && !wantsReminders) {
       return NextResponse.json({ error: "no_fields" }, { status: 400 });
     }
 
     // Read current values so we can diff for audit and skip no-op updates.
-    const current = await query<{ name: string; system_prompt: string }>(
-      `SELECT name, system_prompt FROM rooms WHERE id = $1`,
+    const current = await query<{
+      name: string;
+      system_prompt: string;
+      mention_reminders_enabled: boolean;
+    }>(
+      `SELECT name, system_prompt, mention_reminders_enabled FROM rooms WHERE id = $1`,
       [id]
     );
     const cur = current.rows[0];
@@ -73,16 +78,32 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     }
     const nextPrompt = trimmedPrompt;
 
+    const nextReminders = wantsReminders
+      ? (body.mentionRemindersEnabled as boolean)
+      : cur.mention_reminders_enabled;
+
     const nameChanged = nextName !== cur.name;
     const promptChanged = nextPrompt !== cur.system_prompt;
-    if (!nameChanged && !promptChanged) {
-      return NextResponse.json({ ok: true, name: cur.name, systemPromptLen: cur.system_prompt.length });
+    const remindersChanged = nextReminders !== cur.mention_reminders_enabled;
+    if (!nameChanged && !promptChanged && !remindersChanged) {
+      return NextResponse.json({
+        ok: true,
+        name: cur.name,
+        systemPromptLen: cur.system_prompt.length,
+        mentionRemindersEnabled: cur.mention_reminders_enabled,
+      });
     }
 
-    await query(
-      `UPDATE rooms SET name = $2, system_prompt = $3 WHERE id = $1`,
-      [id, nextName, nextPrompt]
-    );
+    if (nameChanged || promptChanged) {
+      await query(
+        `UPDATE rooms SET name = $2, system_prompt = $3 WHERE id = $1`,
+        [id, nextName, nextPrompt]
+      );
+    }
+    // Encapsulated so disabling also cancels the room's pending reminders.
+    if (remindersChanged) {
+      await setMentionRemindersEnabled(id, nextReminders);
+    }
 
     const metadata: Record<string, unknown> = {};
     if (nameChanged) metadata.name = { from: cur.name, to: nextName };
@@ -92,13 +113,24 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
         to: nextPrompt.length,
       };
     }
+    if (remindersChanged) {
+      metadata.mentionRemindersEnabled = {
+        from: cur.mention_reminders_enabled,
+        to: nextReminders,
+      };
+    }
     await logAudit({ actor, action: "room.update", roomId: id, metadata });
 
     if (nameChanged) {
       broadcast(id, "room_renamed", { name: nextName });
     }
 
-    return NextResponse.json({ ok: true, name: nextName, systemPromptLen: nextPrompt.length });
+    return NextResponse.json({
+      ok: true,
+      name: nextName,
+      systemPromptLen: nextPrompt.length,
+      mentionRemindersEnabled: nextReminders,
+    });
   } catch (err) {
     return httpErrorResponse(err);
   }
