@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { getActor } from "@/lib/creator-auth";
-import { getRoom } from "@/lib/store";
+import { getRoom, isCoAdmin, coAdminEmails, getCreatorById } from "@/lib/store";
 import { listAuditForRoom } from "@/lib/audit";
 import GeneralEditor from "./GeneralEditor";
 import ArchiveControl from "./ArchiveControl";
@@ -27,12 +27,18 @@ export default async function RoomSettingsPage({
   const room = await getRoom(id);
   if (!room) notFound();
 
-  // Cross-owner access leaks 404 (not 403) to keep room existence private —
-  // matches the API ownership guard.
-  if (!actor.isSuperAdmin && room.ownerId !== actor.id) notFound();
+  // Cross-actor access leaks 404 (not 403) to keep room existence private —
+  // matches the API ownership guard. Co-admins may manage the room too.
+  const manager =
+    actor.isSuperAdmin || room.ownerId === actor.id || (await isCoAdmin(id, actor.id));
+  if (!manager) notFound();
 
   const audit = await listAuditForRoom(id, 50);
   const archived = room.archivedAt !== null;
+  const coAdmins = await coAdminEmails(id);
+  const ownerCreator = await getCreatorById(room.ownerId);
+  const ownerEmail = (ownerCreator?.email ?? "").toLowerCase();
+  const canManageCoAdmins = actor.isSuperAdmin || room.ownerId === actor.id;
 
   return (
     <main
@@ -114,6 +120,9 @@ export default async function RoomSettingsPage({
           roomId={room.id}
           participants={room.participants}
           archived={archived}
+          coAdminEmails={coAdmins}
+          ownerEmail={ownerEmail}
+          canManageCoAdmins={canManageCoAdmins}
         />
       </section>
 
