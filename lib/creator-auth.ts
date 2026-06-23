@@ -19,6 +19,7 @@ import { isAdmin } from "./admin-auth";
 import {
   createCreator,
   getRoomMeta,
+  isCoAdmin,
   rotateCreatorTokenHash,
   type AllowlistedCreator,
   type RoomMeta,
@@ -191,6 +192,20 @@ export function checkRoomOwner(
   }
 }
 
+/**
+ * Async ownership-or-co-admin check. Super-admin and owner pass synchronously;
+ * otherwise consult room_admins. Returns 404 (not 403) on denial so room
+ * existence isn't leaked (matches checkRoomOwner).
+ */
+export async function checkRoomManager(
+  actor: Creator,
+  room: { id: string; ownerId: string }
+): Promise<void> {
+  if (actor.isSuperAdmin || room.ownerId === actor.id) return;
+  if (await isCoAdmin(room.id, actor.id)) return;
+  throw new HttpError(404, "not_found");
+}
+
 /** Sign-in: validate token, return the creator (caller sets the cookie). */
 export async function authenticateToken(plaintext: string): Promise<Creator | null> {
   return findByToken(plaintext);
@@ -260,6 +275,21 @@ export async function requireRoomOwner(
   const room = await getRoomMeta(roomId);
   if (!room) throw new HttpError(404, "not_found");
   checkRoomOwner(actor, room);
+  return { actor, room };
+}
+
+/**
+ * Like requireRoomOwner, but co-admins pass too (owner + super-admin + room
+ * co-admins). Used by management routes that delegate to co-admins.
+ */
+export async function requireRoomManager(
+  roomId: string
+): Promise<{ actor: Creator; room: RoomMeta }> {
+  const actor = await getActor();
+  if (!actor) throw new HttpError(401, "unauthorized");
+  const room = await getRoomMeta(roomId);
+  if (!room) throw new HttpError(404, "not_found");
+  await checkRoomManager(actor, room);
   return { actor, room };
 }
 
