@@ -1,0 +1,16 @@
+name: mention-reminders-cron
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"   # every ~10 min; GitHub cron is best-effort (may lag)
+  workflow_dispatch: {}       # manual test trigger
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger mention reminder dispatch
+        run: |
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.MINDFORUM_PROD_URL }}/api/cron/mention-reminders"
