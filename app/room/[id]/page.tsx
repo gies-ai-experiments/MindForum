@@ -19,6 +19,8 @@ import {
 import { PollLaunchModal } from "./PollLaunchModal";
 import { PollCard } from "./PollCard";
 import InviteModal from "./InviteModal";
+import SummarizeModal from "./SummarizeModal";
+import { summaryFilename } from "@/lib/summary-input";
 import FeatureTour from "@/app/components/FeatureTour";
 import TourReplayButton from "@/app/components/TourReplayButton";
 import { ROOM_TOUR_STEPS, TOUR_KEYS } from "@/lib/tour-steps";
@@ -126,6 +128,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
   const [catchupData, setCatchupData] = useState<CatchupData | null>(null);
   const [catchupLoading, setCatchupLoading] = useState(false);
   const [showPollModal, setShowPollModal] = useState(false);
+  const [showSummarizeModal, setShowSummarizeModal] = useState(false);
 
   const [participantId, setParticipantId] = useState<string>("");
   const [prefs, setPrefs] = useState<NotifyPrefs>(DEFAULT_PREFS);
@@ -701,6 +704,11 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
       setShowPollModal(true);
       return;
     }
+    if (content === "/summarize" || content.startsWith("/summarize ")) {
+      setDraft("");
+      setShowSummarizeModal(true);
+      return;
+    }
     setDraft("");
     await fetch(`/api/room/${id}/message`, {
       method: "POST",
@@ -1132,6 +1140,9 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
           onClose={() => setInviteOpen(false)}
         />
       )}
+      {showSummarizeModal && (
+        <SummarizeModal roomId={id} onClose={() => setShowSummarizeModal(false)} />
+      )}
       {catchupOpen && (
         <div
           role="dialog"
@@ -1452,6 +1463,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
           ) : (() => {
             const aiMention = /^\s*@ai\b/i.test(draft);
             const pollCommand = /^\/poll(\s|$)/.test(draft);
+            const summarizeCommand = /^\/summarize(\s|$)/.test(draft);
             const pills = detectMentionPills(draft, state.participants, participantId);
             return (
               <form
@@ -1505,7 +1517,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
                           void submitDraft();
                         }
                       }}
-                      placeholder="Type a message. Start with @ai to ask the AI. (Shift+Enter for newline)"
+                      placeholder="Type a message. @ai asks the AI · /poll starts a vote · /summarize makes a summary"
                       minRows={1}
                       maxRows={8}
                       style={{
@@ -1514,12 +1526,12 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
                         display: "block",
                         borderColor: aiMention
                           ? "var(--orange)"
-                          : pollCommand
+                          : pollCommand || summarizeCommand
                             ? "var(--navy)"
                             : "var(--border)",
                         boxShadow: aiMention
                           ? "0 0 0 3px rgba(232,74,39,0.15)"
-                          : pollCommand
+                          : pollCommand || summarizeCommand
                             ? "0 0 0 3px rgba(19,41,75,0.15)"
                             : "none",
                         outline: "none",
@@ -2685,6 +2697,17 @@ function renderInputMentions(text: string): React.ReactNode[] {
       </span>,
     );
     cursor = pollMatch[0].length;
+  }
+
+  // Leading /summarize command — same leading-only rule as /poll.
+  const summarizeMatch = text.match(/^\/summarize(?=\s|$)/);
+  if (summarizeMatch && cursor === 0) {
+    parts.push(
+      <span key={`im-${i++}`} style={{ color: "var(--navy)", fontWeight: 600 }}>
+        {summarizeMatch[0]}
+      </span>,
+    );
+    cursor = summarizeMatch[0].length;
   }
 
   const regex = /@[\w-]+/g;

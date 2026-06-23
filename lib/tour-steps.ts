@@ -31,6 +31,13 @@ export const ROOM_TOUR_STEPS: TourStep[] = [
     id: "poll",
   },
   {
+    selector: '[data-tour="composer"]',
+    title: "Summarize anything",
+    body: "Type <strong>/summarize</strong> to summarize the room discussion or your own pasted text, then download it as Markdown or PDF.",
+    side: "top",
+    id: "summarize",
+  },
+  {
     selector: '[data-tour="brief"]',
     title: "Wrap it into a brief",
     body: "When you're done, turn the whole thread into themes, risks, and next steps — downloadable as Markdown.",
