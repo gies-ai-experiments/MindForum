@@ -328,3 +328,18 @@ ALTER TABLE rooms ADD COLUMN IF NOT EXISTS mention_reminders_enabled BOOLEAN NOT
 
 INSERT INTO schema_migrations (version) VALUES (16)
   ON CONFLICT (version) DO NOTHING;
+
+-- v17: per-room co-admins. A creator listed here may manage the room
+-- (owner-equivalent minus destructive/ownership actions). Independent of
+-- rooms.owner_id (one owner; zero or more co-admins).
+CREATE TABLE IF NOT EXISTS room_admins (
+  room_id     TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+  creator_id  TEXT NOT NULL REFERENCES allowlisted_creators(id) ON DELETE CASCADE,
+  granted_by  TEXT NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (room_id, creator_id)
+);
+CREATE INDEX IF NOT EXISTS room_admins_creator_idx ON room_admins (creator_id);
+
+INSERT INTO schema_migrations (version) VALUES (17)
+  ON CONFLICT (version) DO NOTHING;

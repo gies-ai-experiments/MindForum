@@ -1736,6 +1736,16 @@ export async function getCreatorById(id: string): Promise<AllowlistedCreator | n
   return rows[0] ? toAllowlistedCreator(rows[0]) : null;
 }
 
+export async function getCreatorByEmail(email: string): Promise<AllowlistedCreator | null> {
+  const { rows } = await query<CreatorBaseRow>(
+    `SELECT id, email, display_name, is_super_admin, disabled_at,
+            token_last_four, token_rotated_at, created_at, created_by
+       FROM allowlisted_creators WHERE lower(email) = lower($1) LIMIT 1`,
+    [email]
+  );
+  return rows[0] ? toAllowlistedCreator(rows[0]) : null;
+}
+
 /**
  * Insert a new allowlisted creator. Caller (lib/creator-auth.ts) generates
  * the plaintext token, computes hash + last-4, and surfaces the plaintext
@@ -2400,4 +2410,58 @@ export async function claimDueMentionReminders(limit: number): Promise<DueRemind
     authorEmail: r.author_email,
     mentionedName: r.mentioned_name,
   }));
+}
+
+// --- Co-admins (per-room management grants) ---
+
+export async function isCoAdmin(roomId: string, creatorId: string): Promise<boolean> {
+  const { rows } = await query<{ one: number }>(
+    `SELECT 1 AS one FROM room_admins WHERE room_id = $1 AND creator_id = $2 LIMIT 1`,
+    [roomId, creatorId],
+  );
+  return rows.length > 0;
+}
+
+export async function listCoAdmins(
+  roomId: string,
+): Promise<{ creatorId: string; email: string; displayName: string; grantedBy: string; createdAt: number }[]> {
+  const { rows } = await query<{
+    creator_id: string; email: string; display_name: string; granted_by: string; created_at: Date;
+  }>(
+    `SELECT ra.creator_id, c.email, c.display_name, ra.granted_by, ra.created_at
+       FROM room_admins ra
+       JOIN allowlisted_creators c ON c.id = ra.creator_id
+      WHERE ra.room_id = $1
+      ORDER BY ra.created_at ASC`,
+    [roomId],
+  );
+  return rows.map((r) => ({
+    creatorId: r.creator_id,
+    email: r.email,
+    displayName: r.display_name,
+    grantedBy: r.granted_by,
+    createdAt: r.created_at.getTime(),
+  }));
+}
+
+export async function coAdminEmails(roomId: string): Promise<string[]> {
+  const { rows } = await query<{ email: string }>(
+    `SELECT lower(c.email) AS email
+       FROM room_admins ra JOIN allowlisted_creators c ON c.id = ra.creator_id
+      WHERE ra.room_id = $1`,
+    [roomId],
+  );
+  return rows.map((r) => r.email);
+}
+
+export async function grantCoAdmin(roomId: string, creatorId: string, grantedBy: string): Promise<void> {
+  await query(
+    `INSERT INTO room_admins (room_id, creator_id, granted_by)
+     VALUES ($1, $2, $3) ON CONFLICT (room_id, creator_id) DO NOTHING`,
+    [roomId, creatorId, grantedBy],
+  );
+}
+
+export async function revokeCoAdmin(roomId: string, creatorId: string): Promise<void> {
+  await query(`DELETE FROM room_admins WHERE room_id = $1 AND creator_id = $2`, [roomId, creatorId]);
 }
