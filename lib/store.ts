@@ -15,6 +15,7 @@ import type { SortKey, Direction } from "./admin-sort";
 import { computeTallies, type OptionRow, type VoteRow } from "./poll-logic";
 import { isSourceType, validateSourceMeta, type SourceMeta, type SourceType } from "./context-sources";
 import { dedupeAndRankCandidates } from "./invite-candidates";
+import type { DueReminderRow } from "./mention-reminders";
 
 export type Participant = {
   id: string;
@@ -2299,4 +2300,68 @@ export async function resolveMentionRemindersFor(
     [roomId, posterId],
   );
   return rows.length;
+}
+
+/** Mark overdue pending rows skipped when the room is closed/archived or the
+ *  target is no longer an active participant. Keeps un-fireable rows from
+ *  lingering as pending. Returns the number skipped. */
+export async function skipDeadDueReminders(): Promise<number> {
+  const { rows } = await query<{ id: string }>(
+    `UPDATE mention_reminders mr
+       SET status='skipped'
+     WHERE mr.status='pending' AND mr.due_at <= NOW()
+       AND (
+         EXISTS (
+           SELECT 1 FROM rooms r
+           WHERE r.id = mr.room_id
+             AND (r.archived_at IS NOT NULL OR r.closed_at IS NOT NULL)
+         )
+         OR NOT EXISTS (
+           SELECT 1 FROM participants p
+           WHERE p.room_id = mr.room_id AND p.id = mr.mentioned_id
+             AND p.removed_at IS NULL AND p.muted_at IS NULL
+         )
+       )
+     RETURNING mr.id`,
+  );
+  return rows.length;
+}
+
+/** Atomically claim up to `limit` due pending reminders (status -> notified),
+ *  joined with their room name. FOR UPDATE SKIP LOCKED makes overlapping cron
+ *  runs disjoint, so no reminder is emailed twice. */
+export async function claimDueMentionReminders(limit: number): Promise<DueReminderRow[]> {
+  const { rows } = await query<{
+    id: string; room_id: string; room_name: string;
+    author_id: string; author_name: string; author_email: string;
+    mentioned_name: string;
+  }>(
+    `WITH claimed AS (
+       UPDATE mention_reminders
+         SET status='notified', notified_at=NOW()
+       WHERE id IN (
+         SELECT id FROM mention_reminders
+         WHERE status='pending' AND due_at <= NOW()
+         ORDER BY due_at
+         LIMIT $1
+         FOR UPDATE SKIP LOCKED
+       )
+       RETURNING id, room_id, author_id, author_name, author_email, mentioned_name
+     )
+     SELECT c.id, c.room_id, r.name AS room_name,
+            c.author_id, c.author_name, c.author_email, c.mentioned_name
+     FROM claimed c
+     JOIN rooms r ON r.id = c.room_id
+     ORDER BY c.room_id, c.author_id`,
+    [limit],
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    roomId: r.room_id,
+    roomName: r.room_name,
+    authorId: r.author_id,
+    authorName: r.author_name,
+    authorEmail: r.author_email,
+    mentionedName: r.mentioned_name,
+  }));
 }
