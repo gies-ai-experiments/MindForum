@@ -18,6 +18,7 @@ import {
 } from "@/lib/notify";
 import { PollLaunchModal } from "./PollLaunchModal";
 import { PollCard } from "./PollCard";
+import InviteModal from "./InviteModal";
 import FeatureTour from "@/app/components/FeatureTour";
 import TourReplayButton from "@/app/components/TourReplayButton";
 import { ROOM_TOUR_STEPS, TOUR_KEYS } from "@/lib/tour-steps";
@@ -133,6 +134,8 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
   const [perm, setPerm] = useState<NotificationPermission | "unsupported">("default");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
+  const [canManage, setCanManage] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
   const [previewFileId, setPreviewFileId] = useState<string | null>(null);
   const [previewData, setPreviewData] = useState<FilePreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -258,6 +261,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
         const data: {
           participantId: string | null;
           readOnly?: boolean;
+          canManage?: boolean;
           catchupHint?: { should: false } | { should: true; since: number | null };
         } = await res.json().catch(() => ({ participantId: null }));
         // A creator opening an archived room they own gets a read-only
@@ -266,6 +270,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
         // instead of being stranded on the join form.
         if (data.participantId || data.readOnly) {
           setParticipantId(data.participantId ?? "");
+          setCanManage(!!data.canManage);
           setJoined(true);
           if (data.catchupHint?.should) {
             setCatchupOpen(true);
@@ -318,6 +323,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
       const joinJson: {
         participantId: string | null;
         readOnly?: boolean;
+        canManage?: boolean;
         catchupHint?: { should: false } | { should: true; since: number | null };
       } = await res.json().catch(() => ({ participantId: "" }));
       try {
@@ -325,6 +331,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
         localStorage.setItem("mindforum_email", trimmedEmail);
       } catch {}
       setParticipantId(joinJson.participantId ?? "");
+      setCanManage(!!joinJson.canManage);
       setJoined(true);
 
       if (joinJson.catchupHint?.should) {
@@ -1118,6 +1125,13 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
           onLaunched={() => setShowPollModal(false)}
         />
       )}
+      {inviteOpen && (
+        <InviteModal
+          roomId={id}
+          archived={!!state.archived}
+          onClose={() => setInviteOpen(false)}
+        />
+      )}
       {catchupOpen && (
         <div
           role="dialog"
@@ -1318,6 +1332,11 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
           <button onClick={copyLink} style={{ ...btnSecondary(), background: linkCopied ? "#166534" : "var(--orange)" }}>
             {linkCopied ? "Link copied ✓" : "Copy link"}
           </button>
+          {canManage && (
+            <button onClick={() => setInviteOpen(true)} style={btnSecondary()}>
+              Invite
+            </button>
+          )}
           <TourReplayButton surface="room" className="room-tour-btn" />
           {settingsOpen && (
             <NotifySettingsPopover
