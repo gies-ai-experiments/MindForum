@@ -5,7 +5,7 @@ import {
   getActor,
   httpErrorResponse,
   requireJsonContent,
-  requireRoomOwner,
+  requireRoomManager,
 } from "@/lib/creator-auth";
 import { hardDeleteRoom, setMentionRemindersEnabled } from "@/lib/store";
 import { logAudit } from "@/lib/audit";
@@ -30,7 +30,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   try {
     requireJsonContent(req);
     const { id } = await ctx.params;
-    const { actor } = await requireRoomOwner(id);
+    const { actor } = await requireRoomManager(id);
     await assertActiveRoom(id);
 
     const body = await req.json().catch(() => ({}));

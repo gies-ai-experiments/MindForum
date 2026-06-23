@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireCreator, httpErrorResponse, requireRoomOwner } from "@/lib/creator-auth";
+import { requireCreator, httpErrorResponse, requireRoomManager } from "@/lib/creator-auth";
 import { cancelInvitation } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +11,7 @@ export async function DELETE(
 ) {
   try {
     const { id, invId } = await params;
-    await requireRoomOwner(id);
+    await requireRoomManager(id);
     const deleted = await cancelInvitation(invId, id);
     if (!deleted) {
       return NextResponse.json({ error: "not_found" }, { status: 404 });

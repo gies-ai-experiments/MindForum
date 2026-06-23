@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parseFile } from "@/lib/parse";
-import { assertActiveRoom, httpErrorResponse, requireRoomOwner } from "@/lib/creator-auth";
+import { assertActiveRoom, httpErrorResponse, requireRoomManager } from "@/lib/creator-auth";
 import { attachRoomFile } from "@/lib/attach-room-file";
 import { roomIsClosed } from "@/lib/room-state";
 import { ATTACH_RATE, MAX_CONTEXT_CHARS } from "@/lib/context-sources";
@@ -20,7 +20,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   // Creator auth — owner or super-admin only.
   let actor;
   try {
-    const result = await requireRoomOwner(id);
+    const result = await requireRoomManager(id);
     actor = result.actor;
   } catch (err) {
     return httpErrorResponse(err);

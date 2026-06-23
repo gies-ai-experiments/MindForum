@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ATTACH_RATE } from "@/lib/context-sources";
-import { assertActiveRoom, httpErrorResponse, requireRoomOwner } from "@/lib/creator-auth";
+import { assertActiveRoom, httpErrorResponse, requireRoomManager } from "@/lib/creator-auth";
 import { previewGitHubRepo, splitGlobs } from "@/lib/ingest/github";
 import { checkRate, clientIp, rateLimited } from "@/lib/ratelimit";
 
@@ -21,7 +21,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   const { id } = await ctx.params;
 
   try {
-    await requireRoomOwner(id);
+    await requireRoomManager(id);
     await assertActiveRoom(id);
   } catch (err) {
     return httpErrorResponse(err);

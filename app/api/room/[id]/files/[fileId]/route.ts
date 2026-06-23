@@ -4,6 +4,7 @@ import {
   getParticipant,
   getRoomFileById,
   getRoomMeta,
+  isCoAdmin,
 } from "@/lib/store";
 import { query } from "@/lib/db";
 import { broadcast } from "@/lib/sse";
@@ -125,7 +126,11 @@ export async function DELETE(
     // Resolve actor for the two-branch decision. Owner/super-admin path does
     // not require a participant cookie; uploader path does.
     const actor = await getActor();
-    const isOwnerActor = !!actor && (actor.isSuperAdmin || room.ownerId === actor.id);
+    const isOwnerActor =
+      !!actor &&
+      (actor.isSuperAdmin ||
+        room.ownerId === actor.id ||
+        (await isCoAdmin(room.id, actor.id)));
 
     let author: { id: string; name: string };
     let deleterRole: "owner" | "super_admin" | "uploader";

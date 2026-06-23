@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as Sentry from "@sentry/nextjs";
-import { requireCreator, httpErrorResponse, requireRoomOwner, requireJsonContent } from "@/lib/creator-auth";
+import { requireCreator, httpErrorResponse, requireRoomManager, requireJsonContent } from "@/lib/creator-auth";
 import { createInvitation, listInvitationsByRoom, type RoomInvitation } from "@/lib/store";
 import { sendInvitationEmail } from "@/lib/email";
 import { parseInviteBatch } from "@/lib/invite-batch";
@@ -25,7 +25,7 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    await requireRoomOwner(id);
+    await requireRoomManager(id);
     const invitations = await listInvitationsByRoom(id);
     return NextResponse.json(invitations);
   } catch (err) {
@@ -40,7 +40,7 @@ export async function POST(
   try {
     requireJsonContent(req);
     const { id } = await params;
-    const { actor } = await requireRoomOwner(id);
+    const { actor } = await requireRoomManager(id);
     const body = await req.json();
 
     // Bulk path: { invites: [{ inviteeEmail, inviteeName }, ...] }

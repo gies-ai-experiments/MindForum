@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { httpErrorResponse, requireRoomOwner } from "@/lib/creator-auth";
+import { httpErrorResponse, requireRoomManager } from "@/lib/creator-auth";
 import { restoreRoom } from "@/lib/store";
 import { logAudit } from "@/lib/audit";
 import { broadcast } from "@/lib/sse";
@@ -10,7 +10,7 @@ export const runtime = "nodejs";
 export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await ctx.params;
-    const { actor, room } = await requireRoomOwner(id);
+    const { actor, room } = await requireRoomManager(id);
     const wasArchived = room.archivedAt !== null;
     const ok = await restoreRoom(id);
     if (!ok) return NextResponse.json({ error: "not_found" }, { status: 404 });

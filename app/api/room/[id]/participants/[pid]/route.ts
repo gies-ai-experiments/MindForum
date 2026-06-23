@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { httpErrorResponse, requireRoomOwner } from "@/lib/creator-auth";
+import { httpErrorResponse, requireRoomManager } from "@/lib/creator-auth";
 import { removeParticipant } from "@/lib/store";
 import { logAudit } from "@/lib/audit";
 import { broadcast } from "@/lib/sse";
@@ -21,7 +21,7 @@ export async function DELETE(
 ) {
   try {
     const { id, pid } = await ctx.params;
-    const { actor, room } = await requireRoomOwner(id);
+    const { actor, room } = await requireRoomManager(id);
     if (room.archivedAt !== null) {
       return NextResponse.json({ error: "archived" }, { status: 410 });
     }

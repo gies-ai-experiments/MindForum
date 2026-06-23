@@ -3,7 +3,7 @@ import * as Sentry from "@sentry/nextjs";
 import {
   httpErrorResponse,
   requireJsonContent,
-  checkRoomOwner,
+  checkRoomManager,
   HttpError,
 } from "@/lib/creator-auth";
 import { requireApiKey } from "@/lib/api-key-auth";
@@ -36,11 +36,11 @@ export async function POST(
     const { id } = await params;
     const { creator, keyId } = await requireApiKey(req);
 
-    // Ownership: missing room OR not owned → 404 (checkRoomOwner throws 404 for
+    // Ownership: missing room OR not owned → 404 (checkRoomManager throws 404 for
     // a non-super-admin cross-owner; API creators are never super-admin).
     const room = await getRoomMeta(id);
     if (!room) throw new HttpError(404, "not_found");
-    checkRoomOwner(creator, room);
+    await checkRoomManager(creator, room);
 
     const dailyRate = checkRate("api-invite-daily", keyId, API_INVITE_DAILY_LIMIT, DAY_MS);
     if (!dailyRate.allowed) return rateLimited(dailyRate.retryAfterSeconds);
