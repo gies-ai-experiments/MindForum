@@ -290,3 +290,32 @@ CREATE INDEX        IF NOT EXISTS api_keys_creator_idx   ON api_keys (creator_id
 
 INSERT INTO schema_migrations (version) VALUES (14)
   ON CONFLICT (version) DO NOTHING;
+
+-- v15: no-reply mention reminders. One row per direct @mention of a human
+-- participant. Lifecycle: pending -> resolved (target posted) | notified
+-- (author emailed after 1h of silence) | skipped (room closed/archived or
+-- target no longer an active participant before due). Author/target identity
+-- is snapshotted so the email needs no participant join at send time.
+CREATE TABLE IF NOT EXISTS mention_reminders (
+  id              TEXT PRIMARY KEY,
+  room_id         TEXT NOT NULL REFERENCES rooms(id)    ON DELETE CASCADE,
+  message_id      TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  author_id       TEXT NOT NULL,
+  author_name     TEXT NOT NULL,
+  author_email    TEXT NOT NULL,
+  mentioned_id    TEXT NOT NULL,
+  mentioned_name  TEXT NOT NULL,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  due_at          TIMESTAMPTZ NOT NULL,
+  status          TEXT NOT NULL DEFAULT 'pending',  -- pending|resolved|notified|skipped
+  resolved_at     TIMESTAMPTZ,
+  notified_at     TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS mention_reminders_due_idx
+  ON mention_reminders (status, due_at);
+CREATE INDEX IF NOT EXISTS mention_reminders_resolve_idx
+  ON mention_reminders (room_id, mentioned_id, status);
+
+INSERT INTO schema_migrations (version) VALUES (15)
+  ON CONFLICT (version) DO NOTHING;
