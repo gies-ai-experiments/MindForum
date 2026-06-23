@@ -1408,9 +1408,11 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
               </span>
             )}
           </button>
-          <button onClick={copyLink} style={{ ...btnSecondary(), background: linkCopied ? "#166534" : "var(--orange)" }}>
-            {linkCopied ? "Link copied ✓" : "Copy link"}
-          </button>
+          {!canManage && (
+            <button onClick={copyLink} style={{ ...btnSecondary(), background: linkCopied ? "#166534" : "var(--orange)" }}>
+              {linkCopied ? "Link copied ✓" : "Copy link"}
+            </button>
+          )}
           {canManage && (
             <button onClick={() => setInviteOpen(true)} style={btnSecondary()}>
               Invite
