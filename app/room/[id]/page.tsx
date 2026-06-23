@@ -1418,6 +1418,11 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
               Invite
             </button>
           )}
+          {canManage && (
+            <a href="/dashboard" style={{ ...btnSecondary(), textDecoration: "none", display: "inline-flex", alignItems: "center" }}>
+              ← Dashboard
+            </a>
+          )}
           <TourReplayButton surface="room" className="room-tour-btn" />
           {settingsOpen && (
             <NotifySettingsPopover
