@@ -1321,6 +1321,22 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
         }}
       >
         <div style={{ minWidth: 0, flex: "1 1 160px" }}>
+          {canManage && (
+            <a
+              href="/dashboard"
+              style={{
+                display: "inline-block",
+                fontSize: 12,
+                fontWeight: 600,
+                color: "white",
+                opacity: 0.85,
+                textDecoration: "none",
+                marginBottom: 2,
+              }}
+            >
+              ← Dashboard
+            </a>
+          )}
           <div style={{ fontSize: 12, opacity: 0.75 }}>MindForum</div>
           <div
             style={{
@@ -1417,11 +1433,6 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
             <button onClick={() => setInviteOpen(true)} style={btnSecondary()}>
               Invite
             </button>
-          )}
-          {canManage && (
-            <a href="/dashboard" style={{ ...btnSecondary(), textDecoration: "none", display: "inline-flex", alignItems: "center" }}>
-              ← Dashboard
-            </a>
           )}
           <TourReplayButton surface="room" className="room-tour-btn" />
           {settingsOpen && (
