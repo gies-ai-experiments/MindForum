@@ -1,4 +1,5 @@
 import { EmailClient } from "@azure/communication-email";
+import { formatNameList } from "./mention-reminders";
 
 export type InvitationEmailParams = {
   inviteeName: string;
@@ -91,6 +92,78 @@ Sign in with this email address (${inviteeEmail}) using your Illinois login and 
   return { subject, html, plainText };
 }
 
+export type MentionReminderEmailParams = {
+  authorName: string;
+  authorEmail: string;
+  roomName: string;
+  roomUrl: string;
+  mentionedNames: string[];
+};
+
+export function buildMentionReminderEmail(params: MentionReminderEmailParams): BuiltEmail {
+  const { authorName, roomName, roomUrl, mentionedNames } = params;
+  const who = formatNameList(mentionedNames);
+  const oneTarget = mentionedNames.length === 1;
+
+  const subject = `No reply yet to your mention in ${roomName}`;
+
+  const author = escapeHtml(authorName);
+  const room = escapeHtml(roomName);
+  const url = escapeHtml(roomUrl);
+  const whoHtml = escapeHtml(who);
+  const verb = oneTarget ? "hasn't" : "haven't";
+
+  const html = `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+  </head>
+  <body style="margin:0;padding:0;background:#F5F5F5;font-family:'Source Sans 3',-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#111827">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F5F5;padding:24px 12px">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#FFFFFF;border:1px solid #E5E7EB;border-radius:12px;overflow:hidden">
+            <tr>
+              <td style="background:#E84A27;background:linear-gradient(90deg,#E84A27,#ff7a3d);padding:20px 28px">
+                <span style="font-family:Montserrat,Segoe UI,Arial,sans-serif;font-weight:700;font-size:20px;color:#FFFFFF;letter-spacing:.2px">MindForum</span>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:28px">
+                <h1 style="margin:0 0 14px;font-family:Montserrat,Segoe UI,Arial,sans-serif;font-size:20px;line-height:1.3;color:#13294B">No reply yet in ${room}</h1>
+                <p style="margin:0 0 14px;font-size:16px;line-height:1.55">Hi ${author},</p>
+                <p style="margin:0 0 24px;font-size:16px;line-height:1.55">You mentioned <strong style="color:#13294B">${whoHtml}</strong> in <strong style="color:#13294B">${room}</strong> about an hour ago, but ${verb} replied yet.</p>
+                <table role="presentation" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td style="border-radius:8px;background:#E84A27">
+                      <a href="${url}" style="display:inline-block;padding:13px 26px;font-family:'Source Sans 3',Segoe UI,Arial,sans-serif;font-size:16px;font-weight:600;color:#FFFFFF;text-decoration:none;border-radius:8px">Open the room &rarr;</a>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:18px 28px;border-top:1px solid #E5E7EB;background:#FAFAFA">
+                <p style="margin:0;font-size:12px;line-height:1.5;color:#6B7280">You received this because you mentioned someone in a MindForum room and they haven't responded yet.</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+
+  const plainText = `Hi ${authorName},
+
+You mentioned ${who} in "${roomName}" about an hour ago, but ${verb} replied yet.
+
+Open the room: ${roomUrl}`;
+
+  return { subject, html, plainText };
+}
+
 let cachedClient: EmailClient | null = null;
 
 function getClient(): EmailClient | null {
@@ -129,5 +202,32 @@ export async function sendInvitationEmail(
       ok: false,
       error: err instanceof Error ? err.message : "send_failed",
     };
+  }
+}
+
+export async function sendMentionReminderEmail(
+  params: MentionReminderEmailParams
+): Promise<{ ok: boolean; id?: string; error?: string }> {
+  const senderAddress = process.env.ACS_SENDER_ADDRESS;
+  const client = getClient();
+
+  if (!client || !senderAddress) {
+    console.debug("[email] ACS not configured; skipping mention reminder email");
+    return { ok: false, error: "not_configured" };
+  }
+
+  try {
+    const { subject, html, plainText } = buildMentionReminderEmail(params);
+    await client.beginSend({
+      senderAddress,
+      content: { subject, html, plainText },
+      recipients: {
+        to: [{ address: params.authorEmail, displayName: params.authorName }],
+      },
+    });
+    return { ok: true };
+  } catch (err) {
+    console.error("[email] failed to send mention reminder email", err);
+    return { ok: false, error: err instanceof Error ? err.message : "send_failed" };
   }
 }
