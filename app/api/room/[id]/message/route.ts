@@ -11,8 +11,14 @@ import {
   setFileSummary,
   updateMessageContent,
   updateMessageGrounding,
+  getActiveParticipants,
+  resolveMentionRemindersFor,
+  armMentionReminders,
   type Message,
 } from "@/lib/store";
+import * as Sentry from "@sentry/nextjs";
+import { extractDirectMentions } from "@/lib/mention-parse";
+import { MENTION_REMINDER_DELAY_MS } from "@/lib/mention-reminders";
 import { broadcast } from "@/lib/sse";
 import { chatReplyStream, summarizeDocument } from "@/lib/openai";
 import { needsSummary } from "@/lib/doc-context";
@@ -95,6 +101,28 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
   // Durable — safe to broadcast.
   broadcast(id, "message_added", msg);
+
+  // Mention reminders: the poster speaking resolves their own pending incoming
+  // mentions; new direct @mentions of others arm a 1-hour "no reply yet" nudge.
+  // Best-effort — must never block or fail the chat message.
+  try {
+    const roomParticipants = await getActiveParticipants(id);
+    await resolveMentionRemindersFor(id, participant.id);
+    const mentioned = extractDirectMentions(content, roomParticipants, participant.id);
+    if (mentioned.length > 0) {
+      await armMentionReminders({
+        roomId: id,
+        messageId: msg.id,
+        createdAt: msg.createdAt,
+        author: { id: participant.id, name: participant.name, email: participant.email },
+        mentioned: mentioned.map((m) => ({ id: m.id, name: m.name })),
+        delayMs: MENTION_REMINDER_DELAY_MS,
+      });
+    }
+  } catch (err) {
+    console.error("mention reminder arm/resolve failed:", err);
+    Sentry.captureException(err);
+  }
 
   // Fetch the systemPrompt once here rather than pulling a full Room object.
   // If the row disappears between the roomExists check and now, the async AI
