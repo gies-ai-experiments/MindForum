@@ -53,7 +53,7 @@ type Msg = {
   authorName: string;
   content: string;
   createdAt: number;
-  kind?: "chat" | "brief" | "system";
+  kind?: "chat" | "brief" | "system" | "summary";
   reactions?: Reaction[];
   editedAt?: number | null;
   groundingFiles?: string[] | null;
@@ -2089,6 +2089,7 @@ function MsgView({
   onQuote?: (m: Msg) => void;
 }) {
   if (m.kind === "brief") return <BriefView m={m} />;
+  if (m.kind === "summary") return <SummaryView m={m} />;
   if (m.kind === "system") return <SystemNoteView m={m} />;
   const isAi = m.authorId === "ai";
 
@@ -2827,6 +2828,82 @@ function briefToMarkdown(brief: BriefData, createdAt: number): string {
     lines.push(``);
   }
   return lines.join("\n");
+}
+
+function summaryBtn(): React.CSSProperties {
+  return {
+    background: "transparent",
+    border: "1px solid var(--border)",
+    borderRadius: 6,
+    padding: "4px 10px",
+    fontSize: 12,
+    color: "var(--navy)",
+    fontWeight: 600,
+    cursor: "pointer",
+  };
+}
+
+function SummaryView({ m }: { m: Msg }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  const downloadMd = () => {
+    const blob = new Blob([m.content], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = summaryFilename(m.createdAt);
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadPdf = () => {
+    const html = ref.current?.innerHTML ?? "";
+    const win = window.open("", "_blank", "width=820,height=900");
+    if (!win) {
+      alert("Please allow pop-ups to download the PDF, then try again.");
+      return;
+    }
+    win.document.write(
+      `<!doctype html><html><head><meta charset="utf-8"><title>MindForum summary</title>` +
+        `<style>body{font-family:Georgia,'Times New Roman',serif;line-height:1.55;color:#111;max-width:720px;margin:40px auto;padding:0 24px}` +
+        `h1,h2,h3{font-family:Arial,Helvetica,sans-serif;color:#13294B;line-height:1.25}` +
+        `h2{font-size:20px;margin:0 0 12px}h3{font-size:16px}ul,ol{padding-left:22px}` +
+        `code{background:#f3f4f6;padding:1px 4px;border-radius:4px}blockquote{color:#555;border-left:3px solid #ddd;margin:0 0 16px;padding:2px 12px}` +
+        `table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:4px 8px}</style></head>` +
+        `<body>${html}</body></html>`,
+    );
+    win.document.close();
+    win.focus();
+    win.print();
+  };
+
+  return (
+    <div
+      style={{
+        padding: 16,
+        margin: "12px 0",
+        background: "var(--card)",
+        border: "1px solid var(--border)",
+        borderRadius: 8,
+        borderLeft: "3px solid var(--navy)",
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 8 }}>
+        <div style={{ fontFamily: "Montserrat, sans-serif", color: "var(--navy)", fontWeight: 700, fontSize: 18 }}>
+          Summary
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button type="button" onClick={downloadMd} style={summaryBtn()}>↓ .md</button>
+          <button type="button" onClick={downloadPdf} style={summaryBtn()}>↓ PDF</button>
+        </div>
+      </div>
+      <div ref={ref} className="markdown-body">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
+      </div>
+    </div>
+  );
 }
 
 function BriefView({ m }: { m: Msg }) {
