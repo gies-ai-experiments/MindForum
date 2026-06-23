@@ -13,7 +13,7 @@ import {
   HttpError,
   httpErrorResponse,
 } from "@/lib/creator-auth";
-import { getRoomMeta } from "@/lib/store";
+import { getRoomMeta, isCoAdmin } from "@/lib/store";
 
 export const runtime = "nodejs";
 
@@ -64,6 +64,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
           readOnly: true,
           archived: true,
           canManage: true,
+          isOwner: true,
           catchupHint: { should: false },
         });
       }
@@ -71,13 +72,17 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     return httpErrorResponse(err);
   }
 
-  // Owner / super-admin get in-room management affordances (invite panel).
+  // Owner / super-admin / co-admin get in-room management affordances. isOwner
+  // (owner or super-admin) additionally gates the co-admin grant/revoke controls.
   const actorForManage = await getActor();
   const metaForManage = await getRoomMeta(id);
-  const canManage =
+  const isOwner =
     !!actorForManage &&
     !!metaForManage &&
     (actorForManage.isSuperAdmin || metaForManage.ownerId === actorForManage.id);
+  const canManage =
+    isOwner ||
+    (!!actorForManage && !!metaForManage && (await isCoAdmin(id, actorForManage.id)));
 
   const body = await req.json().catch(() => ({}));
   let name = typeof body.name === "string" ? body.name.trim().slice(0, 80) : "";
@@ -101,7 +106,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     const existing = await getParticipant(id, existingPid);
     if (existing) {
       const hint = await computeHint(id, false, existing.lastSeenAt);
-      return NextResponse.json({ participantId: existing.id, canManage, catchupHint: hint });
+      return NextResponse.json({ participantId: existing.id, canManage, isOwner, catchupHint: hint });
     }
   }
 
@@ -122,7 +127,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   // DB write is durable — safe to broadcast.
   broadcast(id, "participant_joined", participant);
 
-  const res = NextResponse.json({ participantId: participant.id, canManage, catchupHint: hint });
+  const res = NextResponse.json({ participantId: participant.id, canManage, isOwner, catchupHint: hint });
   res.cookies.set(cookieName, participant.id, {
     httpOnly: true,
     sameSite: "lax",

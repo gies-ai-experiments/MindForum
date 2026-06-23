@@ -999,12 +999,14 @@ export function snapshot(
   reactionsByMsg?: Map<string, ReactionSummary[]>,
   openPolls: OpenPollView[] = [],
   recentClosedPolls: ClosedPollView[] = [],
+  coAdminEmailsList: string[] = [],
 ) {
   return {
     id: room.id,
     name: room.name,
     systemPrompt: room.systemPrompt,
     archived: room.archivedAt !== null,
+    coAdminEmails: coAdminEmailsList,
     participants: room.participants,
     messages: reactionsByMsg
       ? room.messages.map((m) => ({ ...m, reactions: reactionsByMsg.get(m.id) ?? [] }))

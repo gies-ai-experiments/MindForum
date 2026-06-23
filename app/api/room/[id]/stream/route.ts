@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import {
   closeExpiredPolls,
+  coAdminEmails,
   getClosedPollsForRoom,
   getOpenPollsForRoom,
   getReactionsForRoom,
@@ -39,11 +40,12 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   const cookieName = `mindforum_pid_${id}`;
   const participantId = req.cookies.get(cookieName)?.value ?? null;
 
-  const [room, reactions, openPolls, recentClosedPolls] = await Promise.all([
+  const [room, reactions, openPolls, recentClosedPolls, coAdmins] = await Promise.all([
     getRoom(id),
     getReactionsForRoom(id),
     getOpenPollsForRoom(id, participantId ?? ""),
     getClosedPollsForRoom(id, 10),
+    coAdminEmails(id),
   ]);
   if (!room) return new Response("Not found", { status: 404 });
 
@@ -54,7 +56,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   writer.write(
     encoder.encode(
       `event: snapshot\ndata: ${JSON.stringify(
-        snapshot(room, reactions, openPolls, recentClosedPolls),
+        snapshot(room, reactions, openPolls, recentClosedPolls, coAdmins),
       )}\n\n`,
     ),
   );
