@@ -337,6 +337,13 @@ export default async function DashboardPage({
                             <td>
                               {r.relationship === "invited" ? (
                                 <span className="dash-pill dash-pill--invited">INVITED</span>
+                              ) : r.relationship === "co-admin" ? (
+                                <span
+                                  className="dash-pill"
+                                  style={{ background: "#DCFCE7", color: "#166534" }}
+                                >
+                                  CO-ADMIN
+                                </span>
                               ) : isArchived ? (
                                 <span className="dash-pill dash-pill--archived">ARCHIVED</span>
                               ) : (

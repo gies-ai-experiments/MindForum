@@ -1203,7 +1203,7 @@ export type RoomActivityRow = {
   totalParticipants: number;
   fileCount: number;
   closedAt: Date | null;
-  relationship: "owner" | "invited";
+  relationship: "owner" | "invited" | "co-admin";
 };
 
 // -------- Room Invitations
@@ -1442,6 +1442,8 @@ export async function adminListRoomsWithActivity(opts: {
       UNION
       SELECT inv.room_id FROM room_invitations inv
       WHERE lower(inv.invitee_email) = lower($3) AND inv.status = 'accepted'
+      UNION
+      SELECT ra.room_id FROM room_admins ra WHERE $2::text IS NOT NULL AND ra.creator_id = $2
     )
     SELECT
       r.id,
@@ -1457,7 +1459,13 @@ export async function adminListRoomsWithActivity(opts: {
       MAX(m.created_at) AS last_message_at,
       (SELECT COUNT(*) FROM participants p WHERE p.room_id = r.id) AS total_participants,
       (SELECT COUNT(*) FROM room_files f WHERE f.room_id = r.id)  AS file_count,
-      CASE WHEN $2::text IS NOT NULL AND r.owner_id = $2 THEN 'owner' ELSE 'invited' END AS relationship
+      CASE
+        WHEN $2::text IS NOT NULL AND r.owner_id = $2 THEN 'owner'
+        WHEN $2::text IS NOT NULL AND EXISTS (
+          SELECT 1 FROM room_admins ra2 WHERE ra2.room_id = r.id AND ra2.creator_id = $2
+        ) THEN 'co-admin'
+        ELSE 'invited'
+      END AS relationship
     FROM rooms r
     JOIN accessible_rooms ar ON ar.id = r.id
     LEFT JOIN messages m ON m.room_id = r.id
@@ -1528,7 +1536,7 @@ export async function adminListRoomsWithActivity(opts: {
     lastMessageAt: r.last_message_at,
     totalParticipants: Number(r.total_participants),
     fileCount: Number(r.file_count),
-    relationship: r.relationship as "owner" | "invited",
+    relationship: r.relationship as "owner" | "invited" | "co-admin",
   }));
 }
 
