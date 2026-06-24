@@ -1881,6 +1881,72 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
           </form>
         </ContextModal>
       )}
+      {roomSettingsOpen && (
+        <ContextModal title="Room settings" onClose={() => setRoomSettingsOpen(false)}>
+          <form onSubmit={saveRoomSettings} style={{ display: "grid", gap: 14 }}>
+            <label style={{ display: "grid", gap: 4, fontSize: 13, fontWeight: 600 }}>
+              Room name
+              <input
+                value={roomNameDraft}
+                onChange={(e) => setRoomNameDraft(e.target.value)}
+                maxLength={100}
+                placeholder="Room name"
+                style={inp()}
+              />
+            </label>
+            <label style={{ display: "grid", gap: 4, fontSize: 13, fontWeight: 600 }}>
+              Chat system prompt
+              <textarea
+                value={roomPromptDraft}
+                onChange={(e) => setRoomPromptDraft(e.target.value)}
+                maxLength={MAX_SYSTEM_PROMPT_CHARS}
+                rows={10}
+                placeholder="Guidance the AI follows in this room…"
+                style={{ ...inp(), resize: "vertical", fontFamily: "inherit" }}
+              />
+              <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 400 }}>
+                {roomPromptDraft.length.toLocaleString()} / {MAX_SYSTEM_PROMPT_CHARS.toLocaleString()} characters
+              </span>
+            </label>
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <button type="submit" disabled={busy || !roomNameDraft.trim()} style={btnPrimary()}>
+                {busy ? "Saving…" : "Save changes"}
+              </button>
+            </div>
+          </form>
+
+          <div style={{ marginTop: 18, borderTop: "1px solid var(--border)", paddingTop: 14 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
+              Files ({state.files.length})
+            </div>
+            {state.files.length === 0 ? (
+              <p style={{ margin: 0, fontSize: 13, color: "var(--muted)" }}>No files in this room.</p>
+            ) : (
+              <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 6 }}>
+                {state.files.map((f) => (
+                  <li
+                    key={f.id}
+                    style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}
+                  >
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {f.name}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => deleteFile(f.id, f.name)}
+                      aria-label={`Delete ${f.name}`}
+                      style={{ ...btnSecondary(), color: "#b91c1c", borderColor: "#b91c1c", flex: "0 0 auto" }}
+                    >
+                      Delete
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </ContextModal>
+      )}
     </main>
   );
 }
