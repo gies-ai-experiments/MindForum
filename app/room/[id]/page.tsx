@@ -21,12 +21,14 @@ import { PollCard } from "./PollCard";
 import InviteModal from "./InviteModal";
 import SummarizeModal from "./SummarizeModal";
 import { summaryFilename } from "@/lib/summary-input";
+import { MAX_SYSTEM_PROMPT_CHARS } from "@/lib/limits";
+import { formatQuoteTime, buildQuotePrefix, parseQuotedMessage } from "@/lib/quote";
 import FeatureTour from "@/app/components/FeatureTour";
 import TourReplayButton from "@/app/components/TourReplayButton";
 import { ROOM_TOUR_STEPS, TOUR_KEYS } from "@/lib/tour-steps";
 
 type Participant = { id: string; name: string; email: string; joinedAt: number };
-type SourceType = "uploaded" | "github_repo" | "web_url";
+type SourceType = "uploaded" | "github_repo" | "web_url" | "pasted_text";
 type SourceMeta = Record<string, unknown> | null;
 type PublicFile = {
   id: string;
@@ -154,6 +156,17 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
   const [githubPreview, setGithubPreview] = useState<{ fileCount: number; charCount: number } | null>(null);
   const [urlSource, setUrlSource] = useState("");
   const [urlInstruction, setUrlInstruction] = useState("");
+  const [textModalOpen, setTextModalOpen] = useState(false);
+  const [pasteTitle, setPasteTitle] = useState("");
+  const [pasteText, setPasteText] = useState("");
+  const [roomSettingsOpen, setRoomSettingsOpen] = useState(false);
+  const [roomNameDraft, setRoomNameDraft] = useState("");
+  const [roomPromptDraft, setRoomPromptDraft] = useState("");
+  const [quoted, setQuoted] = useState<{
+    authorName: string;
+    createdAt: number;
+    content: string;
+  } | null>(null);
   const isNarrow = useIsNarrow(720);
   const [participantsDrawerOpen, setParticipantsDrawerOpen] = useState(false);
   const [filesDrawerOpen, setFilesDrawerOpen] = useState(false);
@@ -505,6 +518,16 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
     es.addEventListener("room_restored", () => {
       setState((s) => (s ? { ...s, archived: false } : s));
     });
+    es.addEventListener("room_renamed", (ev) => {
+      try {
+        const d = JSON.parse((ev as MessageEvent).data) as { name: string };
+        if (typeof d.name === "string") {
+          setState((s) => (s ? { ...s, name: d.name } : s));
+        }
+      } catch {
+        // ignore malformed event
+      }
+    });
     es.addEventListener("participant_removed", (ev) => {
       const { id: removedId } = JSON.parse((ev as MessageEvent).data) as { id: string };
       setState((s) =>
@@ -699,27 +722,35 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
   }
 
   function quoteReply(m: Msg) {
-    const snip = m.content.replace(/\s+/g, " ").trim().slice(0, 140);
-    const author = m.authorId === "ai" ? "AI" : m.authorName;
-    const block = `> ${author}: ${snip}\n\n`;
-    setDraft((d) => block + d);
+    setQuoted({
+      authorName: m.authorId === "ai" ? "AI" : m.authorName,
+      createdAt: m.createdAt,
+      content: m.content,
+    });
   }
 
   async function submitDraft() {
-    const content = draft.trim();
-    if (!content) return;
+    const body = draft.trim();
+    if (!body) return;
     // Intercept /poll to open the launch modal instead of posting a chat message.
-    if (content === "/poll" || content.startsWith("/poll ")) {
+    if (body === "/poll" || body.startsWith("/poll ")) {
       setDraft("");
+      setQuoted(null);
       setShowPollModal(true);
       return;
     }
-    if (content === "/summarize" || content.startsWith("/summarize ")) {
+    if (body === "/summarize" || body.startsWith("/summarize ")) {
       setDraft("");
+      setQuoted(null);
       setShowSummarizeModal(true);
       return;
     }
+    const quotePrefix = quoted
+      ? buildQuotePrefix(quoted.authorName, quoted.createdAt, quoted.content)
+      : "";
+    const content = quotePrefix + body;
     setDraft("");
+    setQuoted(null);
     await fetch(`/api/room/${id}/message`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -810,6 +841,62 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
       setUrlModalOpen(false);
       setUrlSource("");
       setUrlInstruction("");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function attachText(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/room/${id}/context/text`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title: pasteTitle, text: pasteText }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        alert(`Paste failed: ${body.error ?? res.status}`);
+        return;
+      }
+      setTextModalOpen(false);
+      setPasteTitle("");
+      setPasteText("");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveRoomSettings(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const nextName = roomNameDraft.trim();
+      const res = await fetch(`/api/room/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: nextName, systemPrompt: roomPromptDraft }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        if (body.error === "system_prompt_too_long") {
+          alert(`System prompt too long: ${body.got}/${body.max} characters. Trim it before saving.`);
+        } else {
+          alert(`Save failed: ${body.error ?? res.status}`);
+        }
+        return;
+      }
+      const data = await res.json().catch(() => ({}));
+      // Optimistic local update. Name also arrives via the room_renamed SSE
+      // (separate listener); systemPrompt is not broadcast, so the editor's own
+      // view relies on this update and other clients refresh on reconnect.
+      setState((s) =>
+        s
+          ? { ...s, name: typeof data.name === "string" ? data.name : nextName, systemPrompt: roomPromptDraft.trim() }
+          : s
+      );
+      setRoomSettingsOpen(false);
     } finally {
       setBusy(false);
     }
@@ -1132,6 +1219,16 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
             >
               Scrape URL
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                setTextModalOpen(true);
+                setAttachMenuOpen(false);
+              }}
+              style={attachMenuItemStyle()}
+            >
+              Paste text
+            </button>
           </div>
         )}
       </div>
@@ -1430,6 +1527,21 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
             </button>
           )}
           {canManage && (
+            <button
+              type="button"
+              onClick={() => {
+                setRoomNameDraft(state.name);
+                setRoomPromptDraft(state.systemPrompt ?? "");
+                setRoomSettingsOpen(true);
+              }}
+              aria-label="Room settings"
+              title="Room settings"
+              style={btnSecondary()}
+            >
+              ⚙ Settings
+            </button>
+          )}
+          {canManage && (
             <button onClick={() => setInviteOpen(true)} style={btnSecondary()}>
               Invite
             </button>
@@ -1515,6 +1627,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
                     m={it.data}
                     roomId={id}
                     viewerId={participantId}
+                    participants={state.participants}
                     onQuote={quoteReply}
                   />
                 ) : (
@@ -1561,6 +1674,61 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
                   borderTop: "1px solid var(--border)",
                 }}
               >
+                {quoted && (
+                  <div
+                    style={{
+                      position: "relative",
+                      borderLeft: "3px solid var(--navy)",
+                      background: "var(--card)",
+                      border: "1px solid var(--border)",
+                      borderLeftWidth: 3,
+                      borderRadius: 8,
+                      padding: "8px 36px 8px 12px",
+                    }}
+                  >
+                    <div style={{ fontSize: 13, marginBottom: 2 }}>
+                      <span style={{ fontWeight: 700, color: "var(--text)" }}>
+                        {quoted.authorName}
+                      </span>{" "}
+                      <span style={{ color: "var(--muted)" }}>
+                        {formatQuoteTime(quoted.createdAt)}
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 14,
+                        color: "var(--text)",
+                        lineHeight: 1.4,
+                        display: "-webkit-box",
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: "vertical",
+                        overflow: "hidden",
+                      }}
+                    >
+                      {quoted.content.replace(/\s+/g, " ").trim()}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setQuoted(null)}
+                      aria-label="Remove quote"
+                      title="Remove quote"
+                      style={{
+                        position: "absolute",
+                        top: 6,
+                        right: 8,
+                        background: "transparent",
+                        border: "none",
+                        fontSize: 18,
+                        lineHeight: 1,
+                        cursor: "pointer",
+                        color: "var(--muted)",
+                        padding: 2,
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
                 {pills.length > 0 && (
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                     {pills.map((p, i) => (
@@ -1756,6 +1924,97 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
               </button>
             </div>
           </form>
+        </ContextModal>
+      )}
+      {textModalOpen && (
+        <ContextModal title="Paste text" onClose={() => setTextModalOpen(false)}>
+          <form onSubmit={attachText} style={{ display: "grid", gap: 10 }}>
+            <input
+              value={pasteTitle}
+              onChange={(e) => setPasteTitle(e.target.value)}
+              placeholder="Title (optional — defaults to the first line)"
+              style={inp()}
+            />
+            <textarea
+              required
+              value={pasteText}
+              onChange={(e) => setPasteText(e.target.value)}
+              placeholder="Paste or type the text to add as a context document…"
+              rows={10}
+              style={{ ...inp(), resize: "vertical", fontFamily: "inherit" }}
+            />
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <button type="submit" disabled={busy || !pasteText.trim()} style={btnPrimary()}>
+                {busy ? "Attaching…" : "Attach text"}
+              </button>
+            </div>
+          </form>
+        </ContextModal>
+      )}
+      {roomSettingsOpen && (
+        <ContextModal title="Room settings" onClose={() => setRoomSettingsOpen(false)}>
+          <form onSubmit={saveRoomSettings} style={{ display: "grid", gap: 14 }}>
+            <label style={{ display: "grid", gap: 4, fontSize: 13, fontWeight: 600 }}>
+              Room name
+              <input
+                value={roomNameDraft}
+                onChange={(e) => setRoomNameDraft(e.target.value)}
+                maxLength={100}
+                placeholder="Room name"
+                style={inp()}
+              />
+            </label>
+            <label style={{ display: "grid", gap: 4, fontSize: 13, fontWeight: 600 }}>
+              Chat system prompt
+              <textarea
+                value={roomPromptDraft}
+                onChange={(e) => setRoomPromptDraft(e.target.value)}
+                maxLength={MAX_SYSTEM_PROMPT_CHARS}
+                rows={10}
+                placeholder="Guidance the AI follows in this room…"
+                style={{ ...inp(), resize: "vertical", fontFamily: "inherit" }}
+              />
+              <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 400 }}>
+                {roomPromptDraft.length.toLocaleString()} / {MAX_SYSTEM_PROMPT_CHARS.toLocaleString()} characters
+              </span>
+            </label>
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <button type="submit" disabled={busy || !roomNameDraft.trim()} style={btnPrimary()}>
+                {busy ? "Saving…" : "Save changes"}
+              </button>
+            </div>
+          </form>
+
+          <div style={{ marginTop: 18, borderTop: "1px solid var(--border)", paddingTop: 14 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
+              Files ({state.files.length})
+            </div>
+            {state.files.length === 0 ? (
+              <p style={{ margin: 0, fontSize: 13, color: "var(--muted)" }}>No files in this room.</p>
+            ) : (
+              <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 6 }}>
+                {state.files.map((f) => (
+                  <li
+                    key={f.id}
+                    style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}
+                  >
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {f.name}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => deleteFile(f.id, f.name)}
+                      aria-label={`Delete ${f.name}`}
+                      style={{ ...btnSecondary(), color: "#b91c1c", borderColor: "#b91c1c", flex: "0 0 auto" }}
+                    >
+                      Delete
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </ContextModal>
       )}
     </main>
@@ -2167,11 +2426,13 @@ function MsgView({
   m,
   roomId,
   viewerId,
+  participants,
   onQuote,
 }: {
   m: Msg;
   roomId?: string;
   viewerId?: string;
+  participants?: Participant[];
   onQuote?: (m: Msg) => void;
 }) {
   if (m.kind === "brief") return <BriefView m={m} />;
@@ -2260,7 +2521,18 @@ function MsgView({
       }}
     >
       <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>
-        <span style={{ fontWeight: 600 }}>{m.authorName}</span>
+        <span
+          style={{
+            background: isAi ? "var(--orange)" : "var(--navy)",
+            color: "white",
+            padding: "2px 9px",
+            borderRadius: 4,
+            fontWeight: 700,
+            fontSize: 15,
+          }}
+        >
+          {m.authorName}
+        </span>
         <span
           style={{ marginLeft: 6 }}
           title={new Date(m.createdAt).toLocaleString()}
@@ -2359,7 +2631,21 @@ function MsgView({
                 {m.content}
               </ReactMarkdown>
             ) : (
-              renderWithMentions(m.content)
+              (() => {
+                const { quote, body } = parseQuotedMessage(m.content);
+                return (
+                  <>
+                    {quote && (
+                      <QuotedMessageCard
+                        authorName={quote.authorName}
+                        time={quote.time}
+                        text={quote.text}
+                      />
+                    )}
+                    {body ? renderWithMentions(body) : null}
+                  </>
+                );
+              })()
             )
           ) : isAi ? (
             <span style={{ color: "var(--muted)", fontStyle: "italic" }}>thinking…</span>
@@ -2381,7 +2667,12 @@ function MsgView({
       )}
 
       {!editing && m.reactions && m.reactions.length > 0 && (
-        <ReactionChips reactions={m.reactions} viewerId={viewerId ?? ""} onToggle={react} />
+        <ReactionChips
+          reactions={m.reactions}
+          viewerId={viewerId ?? ""}
+          participants={participants ?? []}
+          onToggle={react}
+        />
       )}
 
       {hover && !editing && canInteract && (
@@ -2530,13 +2821,71 @@ function MessageToolbar({
   );
 }
 
+function formatReacters(
+  reacterIds: string[],
+  participants: Participant[],
+  viewerId: string
+): string {
+  const nameById = new Map(participants.map((p) => [p.id, p.name]));
+  let includesYou = false;
+  const others: string[] = [];
+  for (const rid of reacterIds) {
+    if (rid === viewerId) {
+      includesYou = true;
+      continue;
+    }
+    others.push(nameById.get(rid) ?? "Someone");
+  }
+  const names = includesYou ? [...others, "you"] : others;
+  if (names.length === 0) return "";
+  let list: string;
+  if (names.length === 1) list = names[0];
+  else if (names.length === 2) list = `${names[0]} and ${names[1]}`;
+  else list = `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  return `${list} reacted`;
+}
+
+function QuotedMessageCard({
+  authorName,
+  time,
+  text,
+}: {
+  authorName: string;
+  time: string;
+  text: string;
+}) {
+  return (
+    <div
+      style={{
+        borderLeft: "3px solid var(--navy)",
+        border: "1px solid var(--border)",
+        borderLeftWidth: 3,
+        borderRadius: 8,
+        background: "var(--bg)",
+        padding: "6px 10px",
+        margin: "0 0 6px",
+      }}
+    >
+      <div style={{ fontSize: 12, marginBottom: 2 }}>
+        <span style={{ fontWeight: 700, color: "var(--text)" }}>{authorName}</span>{" "}
+        <span style={{ color: "var(--muted)" }}>{time}</span>
+      </div>
+      <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.4, whiteSpace: "normal" }}>
+        {text}
+      </div>
+    </div>
+  );
+}
+
 function ReactionChips({
   reactions,
   viewerId,
+  participants,
   onToggle,
 }: {
   reactions: Reaction[];
   viewerId: string;
+  participants: Participant[];
   onToggle: (emoji: string) => void;
 }) {
   return (
@@ -2550,6 +2899,7 @@ function ReactionChips({
     >
       {reactions.map((r) => {
         const mine = viewerId !== "" && r.reacterIds.includes(viewerId);
+        const reacterNames = formatReacters(r.reacterIds, participants, viewerId);
         return (
           <button
             key={r.emoji}
@@ -2569,7 +2919,7 @@ function ReactionChips({
               cursor: "pointer",
             }}
             aria-pressed={mine}
-            title={mine ? "Remove your reaction" : "Add your reaction"}
+            title={reacterNames || (mine ? "Remove your reaction" : "Add your reaction")}
           >
             <span>{r.emoji}</span>
             <span style={{ fontWeight: 600, fontSize: 11 }}>{r.count}</span>
@@ -3202,11 +3552,18 @@ function attachMenuItemStyle(): React.CSSProperties {
 function sourceLabel(sourceType: SourceType): string {
   if (sourceType === "github_repo") return "github";
   if (sourceType === "web_url") return "url";
+  if (sourceType === "pasted_text") return "text";
   return "file";
 }
 function sourceBadgeStyle(sourceType: SourceType): React.CSSProperties {
   const color =
-    sourceType === "github_repo" ? "#334155" : sourceType === "web_url" ? "#075985" : "#6b7280";
+    sourceType === "github_repo"
+      ? "#334155"
+      : sourceType === "web_url"
+        ? "#075985"
+        : sourceType === "pasted_text"
+          ? "#7c2d12"
+          : "#6b7280";
   return {
     display: "inline-block",
     marginLeft: 6,

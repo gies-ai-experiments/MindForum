@@ -9,7 +9,7 @@ type FileRow = {
   sizeBytes: number;
   uploadedAt: number;
   selected: boolean;
-  sourceType: "uploaded" | "github_repo" | "web_url";
+  sourceType: "uploaded" | "github_repo" | "web_url" | "pasted_text";
   sourceUrl: string | null;
   sourceMeta: Record<string, unknown> | null;
 };
@@ -180,12 +180,19 @@ export default function FilesPanel({
 function sourceLabel(sourceType: FileRow["sourceType"]): string {
   if (sourceType === "github_repo") return "github";
   if (sourceType === "web_url") return "url";
+  if (sourceType === "pasted_text") return "text";
   return "file";
 }
 
 function badgeStyle(sourceType: FileRow["sourceType"]): React.CSSProperties {
   const color =
-    sourceType === "github_repo" ? "#334155" : sourceType === "web_url" ? "#075985" : "#6b7280";
+    sourceType === "github_repo"
+      ? "#334155"
+      : sourceType === "web_url"
+        ? "#075985"
+        : sourceType === "pasted_text"
+          ? "#7c2d12"
+          : "#6b7280";
   return {
     display: "inline-block",
     marginLeft: 4,

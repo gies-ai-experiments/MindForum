@@ -1,6 +1,6 @@
 import type { RoomFile } from "./store";
 
-export const SOURCE_TYPES = ["uploaded", "github_repo", "web_url"] as const;
+export const SOURCE_TYPES = ["uploaded", "github_repo", "web_url", "pasted_text"] as const;
 export type SourceType = (typeof SOURCE_TYPES)[number];
 
 export type GitHubSourceMeta = {
@@ -27,7 +27,11 @@ export type UrlSourceMeta = {
   webSearchCallCount?: number;
 };
 
-export type SourceMeta = GitHubSourceMeta | UrlSourceMeta | null;
+export type PastedTextSourceMeta = {
+  charCount: number;
+};
+
+export type SourceMeta = GitHubSourceMeta | UrlSourceMeta | PastedTextSourceMeta | null;
 
 export const DEFAULT_GITHUB_INCLUDE = [
   "**/*.md",
@@ -108,6 +112,8 @@ export function sourceLabel(sourceType: SourceType): string {
       return "GitHub repository";
     case "web_url":
       return "Web page";
+    case "pasted_text":
+      return "Pasted text";
   }
 }
 
@@ -140,6 +146,11 @@ export function validateSourceMeta(sourceType: SourceType, meta: unknown): Sourc
       fileCount: meta.fileCount,
       charCount: meta.charCount,
     };
+  }
+
+  if (sourceType === "pasted_text") {
+    if (!isNonNegativeNumber(meta.charCount)) return null;
+    return { charCount: meta.charCount };
   }
 
   if (
