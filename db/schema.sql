@@ -343,3 +343,14 @@ CREATE INDEX IF NOT EXISTS room_admins_creator_idx ON room_admins (creator_id);
 
 INSERT INTO schema_migrations (version) VALUES (17)
   ON CONFLICT (version) DO NOTHING;
+
+-- v18: allow pasted-text context documents. Widens the room_files.source_type
+-- CHECK (added in v11) to include 'pasted_text' — raw text a participant pastes
+-- into the room, stored as a room_files row like uploads/github/url sources.
+ALTER TABLE room_files DROP CONSTRAINT IF EXISTS room_files_source_type_check;
+ALTER TABLE room_files
+  ADD CONSTRAINT room_files_source_type_check
+  CHECK (source_type IN ('uploaded', 'github_repo', 'web_url', 'pasted_text'));
+
+INSERT INTO schema_migrations (version) VALUES (18)
+  ON CONFLICT (version) DO NOTHING;
