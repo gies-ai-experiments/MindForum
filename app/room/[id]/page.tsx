@@ -161,6 +161,11 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
   const [roomSettingsOpen, setRoomSettingsOpen] = useState(false);
   const [roomNameDraft, setRoomNameDraft] = useState("");
   const [roomPromptDraft, setRoomPromptDraft] = useState("");
+  const [quoted, setQuoted] = useState<{
+    authorName: string;
+    createdAt: number;
+    content: string;
+  } | null>(null);
   const isNarrow = useIsNarrow(720);
   const [participantsDrawerOpen, setParticipantsDrawerOpen] = useState(false);
   const [filesDrawerOpen, setFilesDrawerOpen] = useState(false);
@@ -716,27 +721,35 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
   }
 
   function quoteReply(m: Msg) {
-    const snip = m.content.replace(/\s+/g, " ").trim().slice(0, 140);
-    const author = m.authorId === "ai" ? "AI" : m.authorName;
-    const block = `> ${author}: ${snip}\n\n`;
-    setDraft((d) => block + d);
+    setQuoted({
+      authorName: m.authorId === "ai" ? "AI" : m.authorName,
+      createdAt: m.createdAt,
+      content: m.content,
+    });
   }
 
   async function submitDraft() {
-    const content = draft.trim();
-    if (!content) return;
+    const body = draft.trim();
+    if (!body) return;
     // Intercept /poll to open the launch modal instead of posting a chat message.
-    if (content === "/poll" || content.startsWith("/poll ")) {
+    if (body === "/poll" || body.startsWith("/poll ")) {
       setDraft("");
+      setQuoted(null);
       setShowPollModal(true);
       return;
     }
-    if (content === "/summarize" || content.startsWith("/summarize ")) {
+    if (body === "/summarize" || body.startsWith("/summarize ")) {
       setDraft("");
+      setQuoted(null);
       setShowSummarizeModal(true);
       return;
     }
+    const quotePrefix = quoted
+      ? `> ${quoted.authorName}: ${quoted.content.replace(/\s+/g, " ").trim().slice(0, 140)}\n\n`
+      : "";
+    const content = quotePrefix + body;
     setDraft("");
+    setQuoted(null);
     await fetch(`/api/room/${id}/message`, {
       method: "POST",
       headers: { "content-type": "application/json" },
