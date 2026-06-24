@@ -21,6 +21,7 @@ import { PollCard } from "./PollCard";
 import InviteModal from "./InviteModal";
 import SummarizeModal from "./SummarizeModal";
 import { summaryFilename } from "@/lib/summary-input";
+import { MAX_SYSTEM_PROMPT_CHARS } from "@/lib/limits";
 import FeatureTour from "@/app/components/FeatureTour";
 import TourReplayButton from "@/app/components/TourReplayButton";
 import { ROOM_TOUR_STEPS, TOUR_KEYS } from "@/lib/tour-steps";
@@ -157,6 +158,9 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
   const [textModalOpen, setTextModalOpen] = useState(false);
   const [pasteTitle, setPasteTitle] = useState("");
   const [pasteText, setPasteText] = useState("");
+  const [roomSettingsOpen, setRoomSettingsOpen] = useState(false);
+  const [roomNameDraft, setRoomNameDraft] = useState("");
+  const [roomPromptDraft, setRoomPromptDraft] = useState("");
   const isNarrow = useIsNarrow(720);
   const [participantsDrawerOpen, setParticipantsDrawerOpen] = useState(false);
   const [filesDrawerOpen, setFilesDrawerOpen] = useState(false);
@@ -835,6 +839,40 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
       setTextModalOpen(false);
       setPasteTitle("");
       setPasteText("");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveRoomSettings(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const nextName = roomNameDraft.trim();
+      const res = await fetch(`/api/room/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: nextName, systemPrompt: roomPromptDraft }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        if (body.error === "system_prompt_too_long") {
+          alert(`System prompt too long: ${body.got}/${body.max} characters. Trim it before saving.`);
+        } else {
+          alert(`Save failed: ${body.error ?? res.status}`);
+        }
+        return;
+      }
+      const data = await res.json().catch(() => ({}));
+      // Optimistic local update. Name also arrives via the room_renamed SSE
+      // (separate listener); systemPrompt is not broadcast, so the editor's own
+      // view relies on this update and other clients refresh on reconnect.
+      setState((s) =>
+        s
+          ? { ...s, name: typeof data.name === "string" ? data.name : nextName, systemPrompt: roomPromptDraft.trim() }
+          : s
+      );
+      setRoomSettingsOpen(false);
     } finally {
       setBusy(false);
     }
