@@ -26,7 +26,7 @@ import TourReplayButton from "@/app/components/TourReplayButton";
 import { ROOM_TOUR_STEPS, TOUR_KEYS } from "@/lib/tour-steps";
 
 type Participant = { id: string; name: string; email: string; joinedAt: number };
-type SourceType = "uploaded" | "github_repo" | "web_url";
+type SourceType = "uploaded" | "github_repo" | "web_url" | "pasted_text";
 type SourceMeta = Record<string, unknown> | null;
 type PublicFile = {
   id: string;
@@ -154,6 +154,9 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
   const [githubPreview, setGithubPreview] = useState<{ fileCount: number; charCount: number } | null>(null);
   const [urlSource, setUrlSource] = useState("");
   const [urlInstruction, setUrlInstruction] = useState("");
+  const [textModalOpen, setTextModalOpen] = useState(false);
+  const [pasteTitle, setPasteTitle] = useState("");
+  const [pasteText, setPasteText] = useState("");
   const isNarrow = useIsNarrow(720);
   const [participantsDrawerOpen, setParticipantsDrawerOpen] = useState(false);
   const [filesDrawerOpen, setFilesDrawerOpen] = useState(false);
@@ -815,6 +818,28 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
     }
   }
 
+  async function attachText(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/room/${id}/context/text`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title: pasteTitle, text: pasteText }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        alert(`Paste failed: ${body.error ?? res.status}`);
+        return;
+      }
+      setTextModalOpen(false);
+      setPasteTitle("");
+      setPasteText("");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function toggleFile(fileId: string, selected: boolean) {
     await fetch(`/api/room/${id}/files`, {
       method: "POST",
@@ -1131,6 +1156,16 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
               style={attachMenuItemStyle()}
             >
               Scrape URL
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setTextModalOpen(true);
+                setAttachMenuOpen(false);
+              }}
+              style={attachMenuItemStyle()}
+            >
+              Paste text
             </button>
           </div>
         )}
@@ -1753,6 +1788,31 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
             <div style={{ display: "flex", justifyContent: "flex-end" }}>
               <button type="submit" disabled={busy || !urlSource.trim() || !urlInstruction.trim()} style={btnPrimary()}>
                 {busy ? "Attaching…" : "Attach URL"}
+              </button>
+            </div>
+          </form>
+        </ContextModal>
+      )}
+      {textModalOpen && (
+        <ContextModal title="Paste text" onClose={() => setTextModalOpen(false)}>
+          <form onSubmit={attachText} style={{ display: "grid", gap: 10 }}>
+            <input
+              value={pasteTitle}
+              onChange={(e) => setPasteTitle(e.target.value)}
+              placeholder="Title (optional — defaults to the first line)"
+              style={inp()}
+            />
+            <textarea
+              required
+              value={pasteText}
+              onChange={(e) => setPasteText(e.target.value)}
+              placeholder="Paste or type the text to add as a context document…"
+              rows={10}
+              style={{ ...inp(), resize: "vertical", fontFamily: "inherit" }}
+            />
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <button type="submit" disabled={busy || !pasteText.trim()} style={btnPrimary()}>
+                {busy ? "Attaching…" : "Attach text"}
               </button>
             </div>
           </form>
@@ -3202,11 +3262,18 @@ function attachMenuItemStyle(): React.CSSProperties {
 function sourceLabel(sourceType: SourceType): string {
   if (sourceType === "github_repo") return "github";
   if (sourceType === "web_url") return "url";
+  if (sourceType === "pasted_text") return "text";
   return "file";
 }
 function sourceBadgeStyle(sourceType: SourceType): React.CSSProperties {
   const color =
-    sourceType === "github_repo" ? "#334155" : sourceType === "web_url" ? "#075985" : "#6b7280";
+    sourceType === "github_repo"
+      ? "#334155"
+      : sourceType === "web_url"
+        ? "#075985"
+        : sourceType === "pasted_text"
+          ? "#7c2d12"
+          : "#6b7280";
   return {
     display: "inline-block",
     marginLeft: 6,
