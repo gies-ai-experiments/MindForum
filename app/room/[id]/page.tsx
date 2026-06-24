@@ -22,6 +22,7 @@ import InviteModal from "./InviteModal";
 import SummarizeModal from "./SummarizeModal";
 import { summaryFilename } from "@/lib/summary-input";
 import { MAX_SYSTEM_PROMPT_CHARS } from "@/lib/limits";
+import { formatQuoteTime, buildQuotePrefix, parseQuotedMessage } from "@/lib/quote";
 import FeatureTour from "@/app/components/FeatureTour";
 import TourReplayButton from "@/app/components/TourReplayButton";
 import { ROOM_TOUR_STEPS, TOUR_KEYS } from "@/lib/tour-steps";
@@ -745,7 +746,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
       return;
     }
     const quotePrefix = quoted
-      ? `> ${quoted.authorName}: ${quoted.content.replace(/\s+/g, " ").trim().slice(0, 140)}\n\n`
+      ? buildQuotePrefix(quoted.authorName, quoted.createdAt, quoted.content)
       : "";
     const content = quotePrefix + body;
     setDraft("");
@@ -1690,13 +1691,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
                         {quoted.authorName}
                       </span>{" "}
                       <span style={{ color: "var(--muted)" }}>
-                        {new Date(quoted.createdAt).toLocaleString(undefined, {
-                          month: "numeric",
-                          day: "numeric",
-                          year: "2-digit",
-                          hour: "numeric",
-                          minute: "2-digit",
-                        })}
+                        {formatQuoteTime(quoted.createdAt)}
                       </span>
                     </div>
                     <div
@@ -2636,7 +2631,21 @@ function MsgView({
                 {m.content}
               </ReactMarkdown>
             ) : (
-              renderWithMentions(m.content)
+              (() => {
+                const { quote, body } = parseQuotedMessage(m.content);
+                return (
+                  <>
+                    {quote && (
+                      <QuotedMessageCard
+                        authorName={quote.authorName}
+                        time={quote.time}
+                        text={quote.text}
+                      />
+                    )}
+                    {body ? renderWithMentions(body) : null}
+                  </>
+                );
+              })()
             )
           ) : isAi ? (
             <span style={{ color: "var(--muted)", fontStyle: "italic" }}>thinking…</span>
@@ -2834,6 +2843,38 @@ function formatReacters(
   else if (names.length === 2) list = `${names[0]} and ${names[1]}`;
   else list = `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
   return `${list} reacted`;
+}
+
+function QuotedMessageCard({
+  authorName,
+  time,
+  text,
+}: {
+  authorName: string;
+  time: string;
+  text: string;
+}) {
+  return (
+    <div
+      style={{
+        borderLeft: "3px solid var(--navy)",
+        border: "1px solid var(--border)",
+        borderLeftWidth: 3,
+        borderRadius: 8,
+        background: "var(--bg)",
+        padding: "6px 10px",
+        margin: "0 0 6px",
+      }}
+    >
+      <div style={{ fontSize: 12, marginBottom: 2 }}>
+        <span style={{ fontWeight: 700, color: "var(--text)" }}>{authorName}</span>{" "}
+        <span style={{ color: "var(--muted)" }}>{time}</span>
+      </div>
+      <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.4, whiteSpace: "normal" }}>
+        {text}
+      </div>
+    </div>
+  );
 }
 
 function ReactionChips({
