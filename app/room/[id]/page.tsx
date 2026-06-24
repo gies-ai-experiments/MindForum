@@ -512,6 +512,16 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
     es.addEventListener("room_restored", () => {
       setState((s) => (s ? { ...s, archived: false } : s));
     });
+    es.addEventListener("room_renamed", (ev) => {
+      try {
+        const d = JSON.parse((ev as MessageEvent).data) as { name: string };
+        if (typeof d.name === "string") {
+          setState((s) => (s ? { ...s, name: d.name } : s));
+        }
+      } catch {
+        // ignore malformed event
+      }
+    });
     es.addEventListener("participant_removed", (ev) => {
       const { id: removedId } = JSON.parse((ev as MessageEvent).data) as { id: string };
       setState((s) =>
