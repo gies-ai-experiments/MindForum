@@ -1673,6 +1673,67 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
                   borderTop: "1px solid var(--border)",
                 }}
               >
+                {quoted && (
+                  <div
+                    style={{
+                      position: "relative",
+                      borderLeft: "3px solid var(--navy)",
+                      background: "var(--card)",
+                      border: "1px solid var(--border)",
+                      borderLeftWidth: 3,
+                      borderRadius: 8,
+                      padding: "8px 36px 8px 12px",
+                    }}
+                  >
+                    <div style={{ fontSize: 13, marginBottom: 2 }}>
+                      <span style={{ fontWeight: 700, color: "var(--text)" }}>
+                        {quoted.authorName}
+                      </span>{" "}
+                      <span style={{ color: "var(--muted)" }}>
+                        {new Date(quoted.createdAt).toLocaleString(undefined, {
+                          month: "numeric",
+                          day: "numeric",
+                          year: "2-digit",
+                          hour: "numeric",
+                          minute: "2-digit",
+                        })}
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 14,
+                        color: "var(--text)",
+                        lineHeight: 1.4,
+                        display: "-webkit-box",
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: "vertical",
+                        overflow: "hidden",
+                      }}
+                    >
+                      {quoted.content.replace(/\s+/g, " ").trim()}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setQuoted(null)}
+                      aria-label="Remove quote"
+                      title="Remove quote"
+                      style={{
+                        position: "absolute",
+                        top: 6,
+                        right: 8,
+                        background: "transparent",
+                        border: "none",
+                        fontSize: 18,
+                        lineHeight: 1,
+                        cursor: "pointer",
+                        color: "var(--muted)",
+                        padding: 2,
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
                 {pills.length > 0 && (
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                     {pills.map((p, i) => (
