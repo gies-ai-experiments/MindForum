@@ -1613,6 +1613,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
                     m={it.data}
                     roomId={id}
                     viewerId={participantId}
+                    participants={state.participants}
                     onQuote={quoteReply}
                   />
                 ) : (
@@ -2356,11 +2357,13 @@ function MsgView({
   m,
   roomId,
   viewerId,
+  participants,
   onQuote,
 }: {
   m: Msg;
   roomId?: string;
   viewerId?: string;
+  participants?: Participant[];
   onQuote?: (m: Msg) => void;
 }) {
   if (m.kind === "brief") return <BriefView m={m} />;
@@ -2581,7 +2584,12 @@ function MsgView({
       )}
 
       {!editing && m.reactions && m.reactions.length > 0 && (
-        <ReactionChips reactions={m.reactions} viewerId={viewerId ?? ""} onToggle={react} />
+        <ReactionChips
+          reactions={m.reactions}
+          viewerId={viewerId ?? ""}
+          participants={participants ?? []}
+          onToggle={react}
+        />
       )}
 
       {hover && !editing && canInteract && (
@@ -2730,13 +2738,39 @@ function MessageToolbar({
   );
 }
 
+function formatReacters(
+  reacterIds: string[],
+  participants: Participant[],
+  viewerId: string
+): string {
+  const nameById = new Map(participants.map((p) => [p.id, p.name]));
+  let includesYou = false;
+  const others: string[] = [];
+  for (const rid of reacterIds) {
+    if (rid === viewerId) {
+      includesYou = true;
+      continue;
+    }
+    others.push(nameById.get(rid) ?? "Someone");
+  }
+  const names = includesYou ? [...others, "you"] : others;
+  if (names.length === 0) return "";
+  let list: string;
+  if (names.length === 1) list = names[0];
+  else if (names.length === 2) list = `${names[0]} and ${names[1]}`;
+  else list = `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  return `${list} reacted`;
+}
+
 function ReactionChips({
   reactions,
   viewerId,
+  participants,
   onToggle,
 }: {
   reactions: Reaction[];
   viewerId: string;
+  participants: Participant[];
   onToggle: (emoji: string) => void;
 }) {
   return (
@@ -2750,6 +2784,7 @@ function ReactionChips({
     >
       {reactions.map((r) => {
         const mine = viewerId !== "" && r.reacterIds.includes(viewerId);
+        const reacterNames = formatReacters(r.reacterIds, participants, viewerId);
         return (
           <button
             key={r.emoji}
@@ -2769,7 +2804,7 @@ function ReactionChips({
               cursor: "pointer",
             }}
             aria-pressed={mine}
-            title={mine ? "Remove your reaction" : "Add your reaction"}
+            title={reacterNames || (mine ? "Remove your reaction" : "Add your reaction")}
           >
             <span>{r.emoji}</span>
             <span style={{ fontWeight: 600, fontSize: 11 }}>{r.count}</span>
