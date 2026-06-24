@@ -2320,7 +2320,17 @@ function MsgView({
       }}
     >
       <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>
-        <span style={{ fontWeight: 600 }}>{m.authorName}</span>
+        <span
+          style={{
+            background: isAi ? "var(--orange)" : "var(--navy)",
+            color: "white",
+            padding: "1px 8px",
+            borderRadius: 4,
+            fontWeight: 700,
+          }}
+        >
+          {m.authorName}
+        </span>
         <span
           style={{ marginLeft: 6 }}
           title={new Date(m.createdAt).toLocaleString()}
