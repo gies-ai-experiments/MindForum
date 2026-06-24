@@ -1513,6 +1513,21 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
             </button>
           )}
           {canManage && (
+            <button
+              type="button"
+              onClick={() => {
+                setRoomNameDraft(state.name);
+                setRoomPromptDraft(state.systemPrompt ?? "");
+                setRoomSettingsOpen(true);
+              }}
+              aria-label="Room settings"
+              title="Room settings"
+              style={btnSecondary()}
+            >
+              ⚙ Settings
+            </button>
+          )}
+          {canManage && (
             <button onClick={() => setInviteOpen(true)} style={btnSecondary()}>
               Invite
             </button>
