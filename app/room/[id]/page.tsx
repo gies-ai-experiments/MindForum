@@ -2453,9 +2453,10 @@ function MsgView({
           style={{
             background: isAi ? "var(--orange)" : "var(--navy)",
             color: "white",
-            padding: "1px 8px",
+            padding: "2px 9px",
             borderRadius: 4,
             fontWeight: 700,
+            fontSize: 15,
           }}
         >
           {m.authorName}
