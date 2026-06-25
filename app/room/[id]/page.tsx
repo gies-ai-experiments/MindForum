@@ -1075,10 +1075,10 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
           const uploader = state.participants.find((p) => p.id === f.uploadedById);
           const uploaderLabel = uploader ? uploader.name : "Unknown uploader";
           const uploadedDate = new Date(f.uploadedAt).toLocaleDateString();
-          const canDelete =
-            !state.archived &&
-            participantIdRef.current !== "" &&
-            f.uploadedById === participantIdRef.current;
+          // Managers (owner / super-admin / co-admin) can delete any file from
+          // the in-room panel; non-managers can't delete at all (2026-06-25
+          // scope change — managers handle all file removals).
+          const canDelete = !state.archived && canManage;
           return (
             <div
               key={f.id}
