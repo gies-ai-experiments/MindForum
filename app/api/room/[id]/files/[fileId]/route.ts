@@ -93,17 +93,17 @@ export async function GET(
 /**
  * DELETE: remove a file from the room.
  *
- * Two-branch auth (codex-reviewed plan):
- *  - Owner / super-admin (via creator cookie or NextAuth/Entra session) can
- *    delete ANY file in a room they own. Super-admin bypasses ownership.
- *  - Otherwise, a joined participant can delete a file they uploaded
- *    themselves (`file.uploaded_by_id === participant.id`). Files attached via
- *    the owner dashboard use `creator:<actor.id>` and can't be matched by a
- *    participant cookie, so owner-attached files stay owner-only deletable.
- *  - A participant who joined but did not upload the file gets 403
- *    `not_your_file` (they're already a room member, so no existence leak).
+ * Manager-only auth (per 2026-06-25 scope change):
+ *  - Owner / super-admin / co-admin (via creator cookie or NextAuth/Entra
+ *    session) can delete ANY file in the room. Super-admin bypasses
+ *    ownership; co-admin is scoped to the room they were granted on.
+ *  - Non-manager participants can no longer delete files — not even their own
+ *    uploads. A joined non-manager gets 403 `not_manager`. This reverses the
+ *    earlier uploader-self-delete path (PR #26); managers handle all removals.
  *  - A non-joined requester gets 401 `not_joined` regardless of creator
- *    status — preserves the existing 404-not-403 cross-owner hiding behavior.
+ *    status — preserves the existing 404-not-403 cross-owner hiding behavior
+ *    (a cross-owner creator with no participant cookie falls through here too,
+ *    since `getActor` resolves but no manager role matches for this room).
  *
  * The delete + the explanatory kind:"system" chat note are written in a single
  * transaction (deleteRoomFileWithSystemNote) so a 204 guarantees BOTH the file
@@ -123,55 +123,40 @@ export async function DELETE(
       return NextResponse.json({ error: "archived" }, { status: 410 });
     }
 
-    // Resolve actor for the two-branch decision. Owner/super-admin path does
-    // not require a participant cookie; uploader path does.
+    // Resolve the manager role from the creator session. The manager path does
+    // not require a participant cookie; the non-manager rejection below uses
+    // the participant cookie only to choose 401 vs 403 (cross-owner hiding).
     const actor = await getActor();
-    const isOwnerActor =
-      !!actor &&
-      (actor.isSuperAdmin ||
-        room.ownerId === actor.id ||
-        (await isCoAdmin(room.id, actor.id)));
+    let deleterRole: "owner" | "super_admin" | "co_admin" | null = null;
+    if (actor) {
+      if (actor.isSuperAdmin) deleterRole = "super_admin";
+      else if (room.ownerId === actor.id) deleterRole = "owner";
+      else if (await isCoAdmin(room.id, actor.id)) deleterRole = "co_admin";
+    }
 
     let author: { id: string; name: string };
-    let deleterRole: "owner" | "super_admin" | "uploader";
     let auditActor: { id: string; email: string };
     let fileName: string;
 
-    if (isOwnerActor && actor) {
-      // Owner / super-admin: can delete any file. Single lookup for the name
-      // (the note text); the tx re-SELECTs under FOR UPDATE for TOCTOU safety.
+    if (deleterRole && actor) {
+      // Manager: can delete any file. Single lookup for the name (the note
+      // text); the tx re-SELECTs under FOR UPDATE for TOCTOU safety.
       const file = await getRoomFileById(id, fileId);
       if (!file) return NextResponse.json({ error: "file_not_found" }, { status: 404 });
       author = { id: actor.id, name: actor.displayName };
-      deleterRole = actor.isSuperAdmin ? "super_admin" : "owner";
       auditActor = { id: actor.id, email: actor.email };
       fileName = file.name;
     } else {
-      // Uploader path: must be a joined participant deleting their own upload.
-      // A non-joined requester (including a cross-owner creator) gets 401
-      // not_joined here, preserving the existing cross-owner hiding behavior.
-      // Closed rooms lock participants out of new writes (matches the upload
-      // route's `roomIsClosed` guard); the owner branch above stays
-      // archived-only, consistent with the pre-existing owner DELETE behavior
-      // (a facilitator may legitimately clean up files after a session ends).
+      // Not a manager for this room. Distinguish 401 (not joined, preserves
+      // cross-owner hiding — a cross-owner creator with no participant cookie
+      // lands here) from 403 (joined but lacks manager rights). Closed rooms
+      // would also 403, but surface room_closed first so the UI can branch.
       const auth = await requireRoomParticipant(req, id);
       if (!auth.ok) return auth.response;
       if (await roomIsClosed(id)) {
         return NextResponse.json({ error: "room_closed" }, { status: 410 });
       }
-      const participant = auth.participant;
-
-      const file = await getRoomFileById(id, fileId);
-      if (!file) return NextResponse.json({ error: "file_not_found" }, { status: 404 });
-      if (file.uploadedById !== participant.id) {
-        // Participant is already a room member — revealing "not your file"
-        // leaks nothing about room existence.
-        return NextResponse.json({ error: "not_your_file" }, { status: 403 });
-      }
-      author = { id: participant.id, name: participant.name };
-      deleterRole = "uploader";
-      auditActor = { id: participant.id, email: participant.email };
-      fileName = file.name;
+      return NextResponse.json({ error: "not_manager" }, { status: 403 });
     }
 
     const note = `\`${author.name}\` removed "${fileName}" from the room. Future @ai replies won't reference it.`;

@@ -52,7 +52,9 @@ function describe(e: AuditEntry): string {
             ? " (by owner)"
             : md.deleterRole === "super_admin"
               ? " (by super-admin)"
-              : "";
+              : md.deleterRole === "co_admin"
+                ? " (by co-admin)"
+                : "";
       return `deleted "${md.fileName ?? "?"}"${role}`;
     }
     case "file.toggle_selected": {

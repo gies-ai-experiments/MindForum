@@ -83,6 +83,11 @@ const Icon = {
       <polyline points="22,6 12,13 2,6" />
     </svg>
   ),
+  key: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 2l-2 2m-7.5 7.5a5 5 0 1 0-7 7 5 5 0 0 0 7-7zm0 0L21 4m-4 4l3 3" />
+    </svg>
+  ),
 };
 
 /** Normalize an array of counts into bar heights (4–100%). */
@@ -192,6 +197,9 @@ export default async function DashboardPage({
           )}
           <a className="dash-navitem" href="#create">
             {Icon.plus}<span className="dash-navtext">Create room</span>
+          </a>
+          <a className="dash-navitem" href="#api-keys">
+            {Icon.key}<span className="dash-navtext">API keys</span>
           </a>
           {creator.isSuperAdmin && (
             <>
