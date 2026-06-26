@@ -354,3 +354,10 @@ ALTER TABLE room_files
 
 INSERT INTO schema_migrations (version) VALUES (18)
   ON CONFLICT (version) DO NOTHING;
+
+-- v19: per-room web search toggle. When on, the @ai collaborator may use a
+-- web_search tool, but only when a participant explicitly asks it to search.
+ALTER TABLE rooms ADD COLUMN IF NOT EXISTS web_search_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+
+INSERT INTO schema_migrations (version) VALUES (19)
+  ON CONFLICT (version) DO NOTHING;

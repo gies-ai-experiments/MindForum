@@ -7,7 +7,7 @@ import {
   requireJsonContent,
   requireRoomManager,
 } from "@/lib/creator-auth";
-import { hardDeleteRoom, setMentionRemindersEnabled } from "@/lib/store";
+import { hardDeleteRoom, setMentionRemindersEnabled, setWebSearchEnabled } from "@/lib/store";
 import { logAudit } from "@/lib/audit";
 import { query } from "@/lib/db";
 import { broadcast } from "@/lib/sse";
@@ -37,7 +37,8 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     const wantsName = typeof body.name === "string";
     const wantsPrompt = typeof body.systemPrompt === "string";
     const wantsReminders = typeof body.mentionRemindersEnabled === "boolean";
-    if (!wantsName && !wantsPrompt && !wantsReminders) {
+    const wantsWebSearch = typeof body.webSearchEnabled === "boolean";
+    if (!wantsName && !wantsPrompt && !wantsReminders && !wantsWebSearch) {
       return NextResponse.json({ error: "no_fields" }, { status: 400 });
     }
 
@@ -46,8 +47,9 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       name: string;
       system_prompt: string;
       mention_reminders_enabled: boolean;
+      web_search_enabled: boolean;
     }>(
-      `SELECT name, system_prompt, mention_reminders_enabled FROM rooms WHERE id = $1`,
+      `SELECT name, system_prompt, mention_reminders_enabled, web_search_enabled FROM rooms WHERE id = $1`,
       [id]
     );
     const cur = current.rows[0];
@@ -82,15 +84,21 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       ? (body.mentionRemindersEnabled as boolean)
       : cur.mention_reminders_enabled;
 
+    const nextWebSearch = wantsWebSearch
+      ? (body.webSearchEnabled as boolean)
+      : cur.web_search_enabled;
+
     const nameChanged = nextName !== cur.name;
     const promptChanged = nextPrompt !== cur.system_prompt;
     const remindersChanged = nextReminders !== cur.mention_reminders_enabled;
-    if (!nameChanged && !promptChanged && !remindersChanged) {
+    const webSearchChanged = nextWebSearch !== cur.web_search_enabled;
+    if (!nameChanged && !promptChanged && !remindersChanged && !webSearchChanged) {
       return NextResponse.json({
         ok: true,
         name: cur.name,
         systemPromptLen: cur.system_prompt.length,
         mentionRemindersEnabled: cur.mention_reminders_enabled,
+        webSearchEnabled: cur.web_search_enabled,
       });
     }
 
@@ -103,6 +111,9 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     // Encapsulated so disabling also cancels the room's pending reminders.
     if (remindersChanged) {
       await setMentionRemindersEnabled(id, nextReminders);
+    }
+    if (webSearchChanged) {
+      await setWebSearchEnabled(id, nextWebSearch);
     }
 
     const metadata: Record<string, unknown> = {};
@@ -119,6 +130,12 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
         to: nextReminders,
       };
     }
+    if (webSearchChanged) {
+      metadata.webSearchEnabled = {
+        from: cur.web_search_enabled,
+        to: nextWebSearch,
+      };
+    }
     await logAudit({ actor, action: "room.update", roomId: id, metadata });
 
     if (nameChanged) {
@@ -130,6 +147,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       name: nextName,
       systemPromptLen: nextPrompt.length,
       mentionRemindersEnabled: nextReminders,
+      webSearchEnabled: nextWebSearch,
     });
   } catch (err) {
     return httpErrorResponse(err);

@@ -72,6 +72,7 @@ export type Room = {
   systemPrompt: string;
   closedAt: number | null;
   mentionRemindersEnabled: boolean;
+  webSearchEnabled: boolean;
   participants: Participant[];
   messages: Message[];
   files: RoomFile[];
@@ -246,6 +247,7 @@ export async function createRoom(
     createdAt: r.created_at.getTime(),
     closedAt: null,
     mentionRemindersEnabled: true,
+    webSearchEnabled: false,
     participants: [],
     messages: [],
     files: [],
@@ -319,6 +321,7 @@ export async function createRoomBySlug(input: {
         closedAt: null,
         createdAt: r.created_at.getTime(),
         mentionRemindersEnabled: true,
+        webSearchEnabled: false,
         participants: [],
         messages: [],
         files: [],
@@ -341,9 +344,10 @@ export async function getRoom(id: string): Promise<Room | null> {
       created_at: Date;
       closed_at: Date | null;
       mention_reminders_enabled: boolean;
+      web_search_enabled: boolean;
     }>(
       `SELECT id, name, system_prompt, created_by_id, owner_id, archived_at, created_at, closed_at,
-              mention_reminders_enabled
+              mention_reminders_enabled, web_search_enabled
        FROM rooms WHERE id = $1`,
       [id]
     );
@@ -402,6 +406,7 @@ export async function getRoom(id: string): Promise<Room | null> {
       createdAt: r.created_at.getTime(),
       closedAt: r.closed_at ? r.closed_at.getTime() : null,
       mentionRemindersEnabled: r.mention_reminders_enabled,
+      webSearchEnabled: r.web_search_enabled,
       participants: participantsQ.rows.map(toParticipant),
       messages: messagesQ.rows.map(toMessage),
       files: filesQ.rows.map(toRoomFile),
@@ -2312,6 +2317,28 @@ export async function setMentionRemindersEnabled(
       );
     }
   });
+}
+
+// --- Web search toggle ---
+
+/** Whether a room currently allows the @ai collaborator to use web search. */
+export async function isWebSearchEnabled(roomId: string): Promise<boolean> {
+  const { rows } = await query<{ web_search_enabled: boolean }>(
+    `SELECT web_search_enabled FROM rooms WHERE id = $1`,
+    [roomId],
+  );
+  return rows[0]?.web_search_enabled ?? false;
+}
+
+/** Owner/co-admin/super-admin toggle. Plain flag — no cascading cleanup. */
+export async function setWebSearchEnabled(
+  roomId: string,
+  enabled: boolean,
+): Promise<void> {
+  await query(
+    `UPDATE rooms SET web_search_enabled = $2 WHERE id = $1`,
+    [roomId, enabled],
+  );
 }
 
 /** Insert one pending reminder per mentioned person. due_at = createdAt + delay. */

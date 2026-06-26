@@ -5,6 +5,7 @@ import { listAuditForRoom } from "@/lib/audit";
 import GeneralEditor from "./GeneralEditor";
 import ArchiveControl from "./ArchiveControl";
 import MentionReminderToggle from "./MentionReminderToggle";
+import WebSearchToggle from "./WebSearchToggle";
 import FilesPanel from "./FilesPanel";
 import ParticipantsPanel from "./ParticipantsPanel";
 import InvitationsPanel from "./InvitationsPanel";
@@ -131,6 +132,15 @@ export default async function RoomSettingsPage({
         <MentionReminderToggle
           roomId={room.id}
           initialEnabled={room.mentionRemindersEnabled}
+          archived={archived}
+        />
+      </section>
+
+      <section style={{ marginBottom: 32 }}>
+        <h2 style={{ fontSize: 16, marginBottom: 8 }}>Web search</h2>
+        <WebSearchToggle
+          roomId={room.id}
+          initialEnabled={room.webSearchEnabled}
           archived={archived}
         />
       </section>
