@@ -49,6 +49,7 @@ export default function WebSearchToggle({
           type="button"
           role="switch"
           aria-checked={enabled}
+          aria-label="Toggle web search"
           onClick={toggle}
           disabled={busy || archived}
           style={{

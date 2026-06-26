@@ -255,7 +255,8 @@ export async function* chatReplyStream(
       if (t.name === "web_search") {
         let q = "";
         try {
-          q = JSON.parse(t.args || "{}").query ?? "";
+          const raw = JSON.parse(t.args || "{}").query;
+          q = typeof raw === "string" ? raw.trim() : "";
         } catch {
           /* ignore malformed args */
         }
