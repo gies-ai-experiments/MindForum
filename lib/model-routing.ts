@@ -9,7 +9,8 @@ export type ModelRoutingTask =
   | "chat-reply"
   | "brief"
   | "rolling-summary"
-  | "summary";
+  | "summary"
+  | "prompt-generate";
 
 export type ChatRoutingInput = {
   messageCount: number;
@@ -57,6 +58,7 @@ export function modelForTask(
       return input && isLongContext(input) ? modelForTier("strong") : modelForTier("default");
     case "brief":
     case "rolling-summary":
+    case "prompt-generate":
       return modelForTier("strong");
   }
 }
