@@ -98,6 +98,7 @@ type Snapshot = {
   id: string;
   name: string;
   systemPrompt?: string;
+  webSearchEnabled?: boolean;
   archived?: boolean;
   coAdminEmails?: string[];
   participants: Participant[];
@@ -162,6 +163,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
   const [roomSettingsOpen, setRoomSettingsOpen] = useState(false);
   const [roomNameDraft, setRoomNameDraft] = useState("");
   const [roomPromptDraft, setRoomPromptDraft] = useState("");
+  const [roomWebSearchDraft, setRoomWebSearchDraft] = useState(false);
   const [quoted, setQuoted] = useState<{
     authorName: string;
     createdAt: number;
@@ -876,7 +878,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
       const res = await fetch(`/api/room/${id}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name: nextName, systemPrompt: roomPromptDraft }),
+        body: JSON.stringify({ name: nextName, systemPrompt: roomPromptDraft, webSearchEnabled: roomWebSearchDraft }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -893,7 +895,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
       // view relies on this update and other clients refresh on reconnect.
       setState((s) =>
         s
-          ? { ...s, name: typeof data.name === "string" ? data.name : nextName, systemPrompt: roomPromptDraft.trim() }
+          ? { ...s, name: typeof data.name === "string" ? data.name : nextName, systemPrompt: roomPromptDraft.trim(), webSearchEnabled: roomWebSearchDraft }
           : s
       );
       setRoomSettingsOpen(false);
@@ -1532,6 +1534,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
               onClick={() => {
                 setRoomNameDraft(state.name);
                 setRoomPromptDraft(state.systemPrompt ?? "");
+                setRoomWebSearchDraft(state.webSearchEnabled ?? false);
                 setRoomSettingsOpen(true);
               }}
               aria-label="Room settings"
@@ -1978,6 +1981,45 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
                 {roomPromptDraft.length.toLocaleString()} / {MAX_SYSTEM_PROMPT_CHARS.toLocaleString()} characters
               </span>
             </label>
+            <div style={{ display: "grid", gap: 4 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={roomWebSearchDraft}
+                  aria-label="Toggle web search"
+                  onClick={() => setRoomWebSearchDraft((v) => !v)}
+                  style={{
+                    position: "relative",
+                    width: 42,
+                    height: 24,
+                    borderRadius: 999,
+                    border: "none",
+                    background: roomWebSearchDraft ? "#166534" : "#9CA3AF",
+                    cursor: "pointer",
+                    transition: "background 0.15s",
+                    flexShrink: 0,
+                  }}
+                >
+                  <span
+                    style={{
+                      position: "absolute",
+                      top: 2,
+                      left: roomWebSearchDraft ? 20 : 2,
+                      width: 20,
+                      height: 20,
+                      borderRadius: "50%",
+                      background: "white",
+                      transition: "left 0.15s",
+                    }}
+                  />
+                </button>
+                Web search is <strong>{roomWebSearchDraft ? "on" : "off"}</strong>
+              </label>
+              <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 400 }}>
+                When on, the AI may search the web — but only when a participant explicitly asks it to — and cites its sources.
+              </span>
+            </div>
             <div style={{ display: "flex", justifyContent: "flex-end" }}>
               <button type="submit" disabled={busy || !roomNameDraft.trim()} style={btnPrimary()}>
                 {busy ? "Saving…" : "Save changes"}

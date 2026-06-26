@@ -1010,6 +1010,7 @@ export function snapshot(
     id: room.id,
     name: room.name,
     systemPrompt: room.systemPrompt,
+    webSearchEnabled: room.webSearchEnabled,
     archived: room.archivedAt !== null,
     coAdminEmails: coAdminEmailsList,
     participants: room.participants,
