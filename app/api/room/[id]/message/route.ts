@@ -15,6 +15,7 @@ import {
   resolveMentionRemindersFor,
   armMentionReminders,
   isMentionRemindersEnabled,
+  isWebSearchEnabled,
   type Message,
 } from "@/lib/store";
 import * as Sentry from "@sentry/nextjs";
@@ -152,9 +153,10 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       let dirty = false;
       const grounded = new Set<string>(); // file names the AI read in full
       try {
-        const [ctx, selectedFiles] = await Promise.all([
+        const [ctx, selectedFiles, webSearchEnabled] = await Promise.all([
           getRoomCatchupContext(id),
           getSelectedFiles(id),
+          isWebSearchEnabled(id),
         ]);
         const systemPrompt = ctx?.systemPrompt ?? "";
 
@@ -222,6 +224,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         for await (const delta of chatReplyStream(windowMessages, selectedFiles, systemPrompt, {
           recapBlock,
           onReadDocument: (name) => grounded.add(name),
+          webSearch: webSearchEnabled,
         })) {
           aiMsg.content += delta;
           dirty = true;
