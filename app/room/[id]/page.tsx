@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, use } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import TextareaAutosize from "react-textarea-autosize";
+import { presenceColor, presenceLabel } from "@/lib/presence-color";
 import {
   DEFAULT_PREFS,
   type NotifyPrefs,
@@ -28,7 +29,14 @@ import FeatureTour from "@/app/components/FeatureTour";
 import TourReplayButton from "@/app/components/TourReplayButton";
 import { ROOM_TOUR_STEPS, TOUR_KEYS } from "@/lib/tour-steps";
 
-type Participant = { id: string; name: string; email: string; joinedAt: number };
+type Participant = {
+  id: string;
+  name: string;
+  email: string;
+  joinedAt: number;
+  online?: boolean;
+  lastSeenAt?: number | null;
+};
 type SourceType = "uploaded" | "github_repo" | "web_url" | "pasted_text";
 type SourceMeta = Record<string, unknown> | null;
 type PublicFile = {
@@ -172,6 +180,13 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
   } | null>(null);
   const isNarrow = useIsNarrow(720);
   const [participantsDrawerOpen, setParticipantsDrawerOpen] = useState(false);
+  // Re-render periodically so a disconnected participant's dot decays
+  // yellow → none (and the green-grace expires) without any server signal.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(t);
+  }, []);
   const [filesDrawerOpen, setFilesDrawerOpen] = useState(false);
   useEffect(() => {
     if (!isNarrow) {
@@ -384,7 +399,28 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
     });
     es.addEventListener("participant_joined", (ev) => {
       const p: Participant = JSON.parse((ev as MessageEvent).data);
-      setState((s) => (s ? { ...s, participants: upsertById(s.participants, p) } : s));
+      setState((s) =>
+        s ? { ...s, participants: upsertById(s.participants, { ...p, online: true }) } : s,
+      );
+    });
+    es.addEventListener("presence", (ev) => {
+      const d = JSON.parse((ev as MessageEvent).data) as {
+        participantId: string;
+        online: boolean;
+        lastSeenAt?: number;
+      };
+      setState((s) =>
+        s
+          ? {
+              ...s,
+              participants: s.participants.map((p) =>
+                p.id === d.participantId
+                  ? { ...p, online: d.online, lastSeenAt: d.lastSeenAt ?? p.lastSeenAt }
+                  : p,
+              ),
+            }
+          : s,
+      );
     });
     es.addEventListener("co_admin_changed", (ev) => {
       const d = JSON.parse((ev as MessageEvent).data) as { coAdminEmails: string[] };
@@ -1013,12 +1049,25 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
     <div style={{ padding: isNarrow ? 12 : 0, overflowY: "auto", height: "100%" }}>
       {state.participants.map((p) => {
         const isCo = (state.coAdminEmails ?? []).includes(p.email.toLowerCase());
+        const pColor = presenceColor(p.online ?? false, p.lastSeenAt ?? null, now);
+        const dotBg =
+          pColor === "green" ? "#22c55e" : pColor === "yellow" ? "#f59e0b" : "transparent";
         return (
           <div
             key={p.id}
             style={{ display: "flex", gap: 8, alignItems: "center", padding: "6px 0" }}
           >
-            <span style={{ width: 8, height: 8, borderRadius: 8, background: "#22c55e" }} />
+            <span
+              title={presenceLabel(p.online ?? false, p.lastSeenAt ?? null, now)}
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: 8,
+                background: dotBg,
+                border: pColor === "none" ? "1px solid var(--border)" : "none",
+                flexShrink: 0,
+              }}
+            />
             <span>{p.name}</span>
             {isCo && (
               <span
