@@ -1,9 +1,7 @@
 "use client";
 
 import { useState } from "react";
-
-/** Plain-English descriptions shorter than this aren't worth sending. */
-const MIN_DESCRIPTION_CHARS = 10;
+import { MIN_PROMPT_DESCRIPTION_CHARS } from "@/lib/prompt-gen";
 
 /**
  * "Generate prompt" control shared by every system-prompt textarea: the
@@ -32,7 +30,7 @@ export default function GeneratePromptButton({
   const [preview, setPreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const tooShort = value.trim().length < MIN_DESCRIPTION_CHARS;
+  const tooShort = value.trim().length < MIN_PROMPT_DESCRIPTION_CHARS;
   const canGenerate = !disabled && !tooShort && !loading;
 
   async function generate() {

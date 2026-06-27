@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { checkRate, clientIp, rateLimited } from "@/lib/ratelimit";
-import { getCreator } from "@/lib/creator-auth";
+import { getActor } from "@/lib/creator-auth";
 import { parsePromptGenInput } from "@/lib/prompt-gen";
 import { generateSystemPrompt } from "@/lib/openai";
 
@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
     authed = a.length === b.length && crypto.timingSafeEqual(a, b);
   }
   if (!authed) {
-    authed = (await getCreator()) !== null;
+    authed = (await getActor()) !== null;
   }
   if (!authed) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });

@@ -1984,6 +1984,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
               <GeneratePromptButton
                 value={roomPromptDraft}
                 onAccept={setRoomPromptDraft}
+                disabled={busy}
               />
             </label>
             <div style={{ display: "grid", gap: 4 }}>
