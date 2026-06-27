@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { editMessage, getMessageRoomId, getParticipant } from "@/lib/store";
+import { deleteMessage, editMessage, getMessageRoomId, getParticipant } from "@/lib/store";
 import { broadcast } from "@/lib/sse";
 import { checkRate, clientIp, rateLimited } from "@/lib/ratelimit";
 import { assertActiveRoom, httpErrorResponse } from "@/lib/creator-auth";
@@ -50,4 +50,39 @@ export async function PATCH(
   });
 
   return NextResponse.json({ ok: true, content: updated.content, editedAt: updated.editedAt });
+}
+
+export async function DELETE(
+  req: NextRequest,
+  ctx: { params: Promise<{ id: string; msgId: string }> }
+) {
+  const rate = checkRate("delete", clientIp(req), 30, 60 * 1000);
+  if (!rate.allowed) return rateLimited(rate.retryAfterSeconds);
+
+  const { id, msgId } = await ctx.params;
+  try {
+    await assertActiveRoom(id);
+  } catch (err) {
+    return httpErrorResponse(err);
+  }
+
+  const pid = req.cookies.get(`mindforum_pid_${id}`)?.value;
+  const participant = pid ? await getParticipant(id, pid) : null;
+  if (!participant) return NextResponse.json({ error: "not_joined" }, { status: 401 });
+
+  // Cross-room safety check matches the PATCH / react routes.
+  const ownerRoom = await getMessageRoomId(msgId);
+  if (ownerRoom !== id) {
+    return NextResponse.json({ error: "message_not_found" }, { status: 404 });
+  }
+
+  const deleted = await deleteMessage(msgId, participant.id);
+  // Existence / cross-room mismatches return 404 above. A null result here means
+  // the participant isn't the author (or it's already deleted) → 403, matching
+  // the PATCH edit route's authorization shape.
+  if (!deleted) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+
+  broadcast(id, "message_deleted", { id: msgId, deletedAt: deleted.deletedAt });
+
+  return NextResponse.json({ ok: true, deletedAt: deleted.deletedAt });
 }
