@@ -67,6 +67,7 @@ type Msg = {
   kind?: "chat" | "brief" | "system" | "summary";
   reactions?: Reaction[];
   editedAt?: number | null;
+  deletedAt?: number | null;
   groundingFiles?: string[] | null;
 };
 type PollOptionView = { id: string; pollId: string; position: number; text: string };
@@ -525,6 +526,22 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
                       ...(editedAt !== undefined ? { editedAt } : {}),
                     }
                   : m
+              ),
+            }
+          : s
+      );
+    });
+    es.addEventListener("message_deleted", (ev) => {
+      const { id: mid, deletedAt } = JSON.parse((ev as MessageEvent).data) as {
+        id: string;
+        deletedAt: number;
+      };
+      setState((s) =>
+        s
+          ? {
+              ...s,
+              messages: s.messages.map((m) =>
+                m.id === mid ? { ...m, deletedAt, content: "", reactions: [] } : m
               ),
             }
           : s
@@ -2600,6 +2617,17 @@ function MsgView({
     }
   }
 
+  async function del() {
+    if (!roomId) return;
+    if (!window.confirm("Delete this message? This can't be undone.")) return;
+    try {
+      await fetch(`/api/room/${roomId}/message/${m.id}`, { method: "DELETE" });
+      // SSE `message_deleted` tombstones it for everyone, including us.
+    } catch {
+      /* SSE will eventually reconcile */
+    }
+  }
+
   return (
     <div
       onMouseEnter={() => setHover(true)}
@@ -2636,7 +2664,7 @@ function MsgView({
         >
           {formatMsgTime(m.createdAt)}
         </span>
-        {m.editedAt ? (
+        {m.editedAt && !m.deletedAt ? (
           <span
             style={{ marginLeft: 6, fontSize: 11, fontStyle: "italic" }}
             title={`Edited ${new Date(m.editedAt).toLocaleString()}`}
@@ -2646,7 +2674,17 @@ function MsgView({
         ) : null}
       </div>
 
-      {editing ? (
+      {m.deletedAt ? (
+        <div
+          style={{
+            color: "var(--muted)",
+            fontStyle: "italic",
+            fontSize: 14,
+          }}
+        >
+          🗑️ This message was deleted
+        </div>
+      ) : editing ? (
         <div style={{ display: "grid", gap: 6 }}>
           <textarea
             value={editDraft}
@@ -2763,7 +2801,7 @@ function MsgView({
         </div>
       )}
 
-      {!editing && m.reactions && m.reactions.length > 0 && (
+      {!editing && !m.deletedAt && m.reactions && m.reactions.length > 0 && (
         <ReactionChips
           reactions={m.reactions}
           viewerId={viewerId ?? ""}
@@ -2772,11 +2810,12 @@ function MsgView({
         />
       )}
 
-      {hover && !editing && canInteract && (
+      {hover && !editing && !m.deletedAt && canInteract && (
         <MessageToolbar
           onReact={react}
           onQuote={onQuote ? () => onQuote(m) : undefined}
           onEdit={canEdit ? startEdit : undefined}
+          onDelete={canEdit ? del : undefined}
           pickerOpen={pickerOpen}
           togglePicker={() => setPickerOpen((o) => !o)}
         />
@@ -2797,12 +2836,14 @@ function MessageToolbar({
   onReact,
   onQuote,
   onEdit,
+  onDelete,
   pickerOpen,
   togglePicker,
 }: {
   onReact: (emoji: string) => void;
   onQuote?: () => void;
   onEdit?: () => void;
+  onDelete?: () => void;
   pickerOpen: boolean;
   togglePicker: () => void;
 }) {
@@ -2902,6 +2943,17 @@ function MessageToolbar({
             </div>
           )}
         </div>
+      )}
+      {onDelete && (
+        <button
+          type="button"
+          onClick={onDelete}
+          style={{ ...btn, fontSize: 15 }}
+          aria-label="Delete message"
+          title="Delete message"
+        >
+          🗑️
+        </button>
       )}
       {onQuote && (
         <button
