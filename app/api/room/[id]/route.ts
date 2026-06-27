@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isAdmin } from "@/lib/admin-auth";
 import {
   assertActiveRoom,
-  getActor,
   httpErrorResponse,
   requireJsonContent,
   requireRoomManager,
+  requireRoomOwner,
 } from "@/lib/creator-auth";
 import { hardDeleteRoom, setMentionRemindersEnabled, setWebSearchEnabled } from "@/lib/store";
 import { logAudit } from "@/lib/audit";
@@ -155,21 +154,20 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 }
 
 /**
- * DELETE: super-admin hard-delete. Refused on active rooms (`409
- * not_archived`) — a room must be archived first; archive is the recoverable
- * staging step. The archived-only rule is enforced atomically inside
+ * DELETE: hard-delete by the room owner or super-admin (requireRoomOwner).
+ * Refused on active rooms (`409 not_archived`) — a room must be archived first;
+ * archive is the recoverable staging step, enforced atomically inside
  * `hardDeleteRoom` (see lib/store.ts). Audit row is written after the delete
  * returns so the snapshot metadata reflects the row that just disappeared.
- *
- * Creator path is NOT supported here. Creators archive; only super-admin
- * destroys.
+ * Co-admins archive; only the owner (or super-admin) destroys.
  */
 export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  if (!(await isAdmin())) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
   try {
     const { id } = await ctx.params;
+    // Owner of their own room, or super-admin. 401 if no actor; 404 if a
+    // different creator's room (existence not leaked). Co-admins do NOT pass —
+    // hard-delete is owner-only; they archive instead.
+    const { actor } = await requireRoomOwner(id);
     const result = await hardDeleteRoom(id);
     if (!result.ok) {
       const status = result.reason === "not_found" ? 404 : 409;
@@ -182,15 +180,7 @@ export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: str
       messageCount: result.messageCount,
       fileCount: result.fileCount,
     };
-    const actor = await getActor();
-    if (actor) {
-      await logAudit({
-        actor,
-        action: "room.hard_delete",
-        roomId: id,
-        metadata: snap,
-      });
-    }
+    await logAudit({ actor, action: "room.hard_delete", roomId: id, metadata: snap });
     return NextResponse.json({ ok: true, ...snap });
   } catch (err) {
     return httpErrorResponse(err);
