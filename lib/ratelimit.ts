@@ -12,6 +12,7 @@
 //   poll-create       5  / 10min
 //   poll-vote         30 /  1min
 //   poll-close        10 /  1min
+//   promptgen         10 / 10min
 
 type Hit = { ts: number; n: number };
 
