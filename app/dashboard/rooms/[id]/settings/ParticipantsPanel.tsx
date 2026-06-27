@@ -7,6 +7,7 @@ type Row = {
   name: string;
   email: string;
   joinedAt: number;
+  presence: { color: "green" | "yellow" | "none"; label: string };
 };
 
 export default function ParticipantsPanel({
@@ -111,6 +112,7 @@ export default function ParticipantsPanel({
             <th style={{ padding: 6, fontSize: 13 }}>Email</th>
             <th style={{ padding: 6, fontSize: 13 }}>Role</th>
             <th style={{ padding: 6, fontSize: 13 }}>Joined</th>
+            <th style={{ padding: 6, fontSize: 13 }}>Status</th>
             <th style={{ padding: 6, fontSize: 13 }}></th>
           </tr>
         </thead>
@@ -151,6 +153,25 @@ export default function ParticipantsPanel({
                 </td>
                 <td style={{ padding: 6, fontSize: 13, color: "#666" }}>
                   {new Date(p.joinedAt).toISOString().slice(0, 10)}
+                </td>
+                <td style={{ padding: 6, fontSize: 13, color: "#666" }}>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                    <span
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: 8,
+                        background:
+                          p.presence.color === "green"
+                            ? "#22c55e"
+                            : p.presence.color === "yellow"
+                              ? "#f59e0b"
+                              : "transparent",
+                        border: p.presence.color === "none" ? "1px solid #d1d5db" : "none",
+                      }}
+                    />
+                    {p.presence.label}
+                  </span>
                 </td>
                 <td style={{ padding: 6, fontSize: 13, textAlign: "right" }}>
                   <button

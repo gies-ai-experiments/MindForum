@@ -10,6 +10,8 @@ import FilesPanel from "./FilesPanel";
 import ParticipantsPanel from "./ParticipantsPanel";
 import InvitationsPanel from "./InvitationsPanel";
 import ActivityFeed from "./ActivityFeed";
+import { onlineParticipantIds } from "@/lib/presence";
+import { presenceColor, presenceLabel } from "@/lib/presence-color";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +42,10 @@ export default async function RoomSettingsPage({
   const ownerCreator = await getCreatorById(room.ownerId);
   const ownerEmail = (ownerCreator?.email ?? "").toLowerCase();
   const canManageCoAdmins = actor.isSuperAdmin || room.ownerId === actor.id;
+  // Load-time presence snapshot (not live — refresh to update). onlineIds is
+  // read from the same in-memory map the room stream maintains in this process.
+  const onlineIds = onlineParticipantIds(room.id);
+  const nowMs = Date.now();
 
   return (
     <main
@@ -119,7 +125,19 @@ export default async function RoomSettingsPage({
         </h2>
         <ParticipantsPanel
           roomId={room.id}
-          participants={room.participants}
+          participants={room.participants.map((p) => {
+            const online = onlineIds.has(p.id);
+            return {
+              id: p.id,
+              name: p.name,
+              email: p.email,
+              joinedAt: p.joinedAt,
+              presence: {
+                color: presenceColor(online, p.lastSeenAt, nowMs),
+                label: presenceLabel(online, p.lastSeenAt, nowMs),
+              },
+            };
+          })}
           archived={archived}
           coAdminEmails={coAdmins}
           ownerEmail={ownerEmail}
