@@ -361,3 +361,11 @@ ALTER TABLE rooms ADD COLUMN IF NOT EXISTS web_search_enabled BOOLEAN NOT NULL D
 
 INSERT INTO schema_migrations (version) VALUES (19)
   ON CONFLICT (version) DO NOTHING;
+
+-- v20: soft-delete (tombstone) for chat messages. deleteMessage() sets
+-- deleted_at and clears content; the display path keeps the row so the client
+-- renders a "message deleted" tombstone, while AI/brief loaders filter it out.
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+
+INSERT INTO schema_migrations (version) VALUES (20)
+  ON CONFLICT (version) DO NOTHING;

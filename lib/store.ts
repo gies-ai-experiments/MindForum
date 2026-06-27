@@ -43,6 +43,7 @@ export type Message = {
   kind?: "chat" | "brief" | "system" | "summary";
   reactions?: ReactionSummary[];
   editedAt?: number | null;
+  deletedAt?: number | null;
   groundingFiles?: string[] | null;
 };
 
@@ -159,6 +160,7 @@ function toMessage(r: {
   kind: string;
   created_at: Date;
   edited_at?: Date | null;
+  deleted_at?: Date | null;
   grounding_files?: unknown;
 }): Message {
   return {
@@ -170,6 +172,7 @@ function toMessage(r: {
     createdAt: r.created_at.getTime(),
     kind: (r.kind as Message["kind"]) ?? "chat",
     editedAt: r.edited_at ? r.edited_at.getTime() : null,
+    deletedAt: r.deleted_at ? r.deleted_at.getTime() : null,
     groundingFiles: Array.isArray(r.grounding_files)
       ? (r.grounding_files as unknown[]).filter((x): x is string => typeof x === "string")
       : null,
@@ -377,12 +380,13 @@ export async function getRoom(id: string): Promise<Room | null> {
         kind: string;
         created_at: Date;
         edited_at: Date | null;
+        deleted_at: Date | null;
         grounding_files: unknown;
       }>(
         // grounding_files included so the SSE snapshot carries the "checked the
         // full text of X" caption on reload. AI-history SELECTs deliberately omit
         // it — it must never re-feed into the model (see toMessage).
-        `SELECT id, room_id, author_id, author_name, content, kind, created_at, edited_at, grounding_files
+        `SELECT id, room_id, author_id, author_name, content, kind, created_at, edited_at, deleted_at, grounding_files
          FROM messages WHERE room_id = $1
          ORDER BY created_at ASC, id ASC`,
         [id]
@@ -602,12 +606,34 @@ export async function editMessage(
   const { rows } = await query<{ content: string; edited_at: Date }>(
     `UPDATE messages
        SET content = $3, edited_at = NOW()
-     WHERE id = $1 AND author_id = $2 AND kind = 'chat'
+     WHERE id = $1 AND author_id = $2 AND kind = 'chat' AND deleted_at IS NULL
      RETURNING content, edited_at`,
     [messageId, authorId, newContent]
   );
   if (rows.length === 0) return null;
   return { content: rows[0].content, editedAt: rows[0].edited_at.getTime() };
+}
+
+/**
+ * Author-only soft delete (tombstone). Sets deleted_at and clears content so
+ * the deleted text leaves the DB and the SSE wire; the row stays so the client
+ * renders a "message deleted" line. Returns the deleted_at on success, or null
+ * if the message doesn't exist, the participant doesn't own it, or it's already
+ * deleted.
+ */
+export async function deleteMessage(
+  messageId: string,
+  authorId: string
+): Promise<{ deletedAt: number } | null> {
+  const { rows } = await query<{ deleted_at: Date }>(
+    `UPDATE messages
+       SET deleted_at = NOW(), content = ''
+     WHERE id = $1 AND author_id = $2 AND kind = 'chat' AND deleted_at IS NULL
+     RETURNING deleted_at`,
+    [messageId, authorId]
+  );
+  if (rows.length === 0) return null;
+  return { deletedAt: rows[0].deleted_at.getTime() };
 }
 
 // -------- Files
@@ -690,7 +716,7 @@ export async function getRecentMessages(roomId: string, limit: number): Promise<
   }>(
     `SELECT * FROM (
        SELECT id, room_id, author_id, author_name, content, kind, created_at, edited_at
-       FROM messages WHERE room_id = $1
+       FROM messages WHERE room_id = $1 AND deleted_at IS NULL
        ORDER BY created_at DESC, id DESC
        LIMIT $2
      ) t ORDER BY created_at ASC, id ASC`,
@@ -880,7 +906,7 @@ export async function getChatMessagesAfter(
     }>(
       `SELECT id, room_id, author_id, author_name, content, kind, created_at
        FROM messages
-       WHERE room_id = $1 AND kind = 'chat'
+       WHERE room_id = $1 AND kind = 'chat' AND deleted_at IS NULL
        ORDER BY created_at ASC, id ASC`,
       [roomId]
     );
@@ -903,6 +929,7 @@ export async function getChatMessagesAfter(
      FROM messages m, anchor a
      WHERE m.room_id = $1
        AND m.kind = 'chat'
+       AND m.deleted_at IS NULL
        AND (m.created_at, m.id) > (a.created_at, a.id)
      ORDER BY m.created_at ASC, m.id ASC`,
     [roomId, afterMsgId]
@@ -982,7 +1009,7 @@ export async function getRecentChatMessages(
     `SELECT * FROM (
        SELECT id, room_id, author_id, author_name, content, kind, created_at
        FROM messages
-       WHERE room_id = $1 AND kind = 'chat'
+       WHERE room_id = $1 AND kind = 'chat' AND deleted_at IS NULL
        ORDER BY created_at DESC, id DESC
        LIMIT $2
      ) t ORDER BY created_at ASC, id ASC`,
