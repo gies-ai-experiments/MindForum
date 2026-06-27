@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { MAX_SYSTEM_PROMPT_CHARS } from "@/lib/limits";
 import DashboardAttachButton from "@/app/dashboard/DashboardAttachButton";
+import GeneratePromptButton from "@/app/components/GeneratePromptButton";
 
 const MAX_NAME = 100;
 const MAX_PROMPT = MAX_SYSTEM_PROMPT_CHARS;
@@ -112,6 +113,11 @@ export default function GeneralEditor({
           </span>
         )}
       </label>
+      <GeneratePromptButton
+        value={systemPrompt}
+        onAccept={setSystemPrompt}
+        disabled={busy || archived}
+      />
 
       {msg && (
         <p

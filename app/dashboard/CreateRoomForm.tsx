@@ -7,6 +7,7 @@ import DashboardAttachButton, {
   type PendingAttachment,
 } from "./DashboardAttachButton";
 import InviteeAutocomplete from "./InviteeAutocomplete";
+import GeneratePromptButton from "@/app/components/GeneratePromptButton";
 
 const SLUG_RE = /^[a-z0-9-]{3,40}$/;
 
@@ -423,6 +424,11 @@ export default function CreateRoomForm() {
           }}
         />
       </label>
+      <GeneratePromptButton
+        value={systemPrompt}
+        onAccept={setSystemPrompt}
+        disabled={busy}
+      />
 
       {error && (
         <p role="alert" style={{ color: "#c00", margin: 0, fontSize: 13 }}>

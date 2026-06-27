@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { MAX_SYSTEM_PROMPT_CHARS } from "@/lib/limits";
+import GeneratePromptButton from "@/app/components/GeneratePromptButton";
 
 const ADMIN_TOKEN_KEY = "mindforum_admin_token";
 
@@ -117,6 +118,12 @@ export default function AdminCreateCard() {
               System prompt is {(systemPrompt.length - MAX_SYSTEM_PROMPT_CHARS).toLocaleString()} characters over the {MAX_SYSTEM_PROMPT_CHARS.toLocaleString()}-char limit. Keep it lean — put reference material in uploaded room files instead.
             </p>
           )}
+          <GeneratePromptButton
+            value={systemPrompt}
+            onAccept={setSystemPrompt}
+            disabled={loading}
+            adminToken={adminToken}
+          />
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end" }}>
           <button

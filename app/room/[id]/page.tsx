@@ -23,6 +23,7 @@ import SummarizeModal from "./SummarizeModal";
 import { summaryFilename } from "@/lib/summary-input";
 import { MAX_SYSTEM_PROMPT_CHARS } from "@/lib/limits";
 import { formatQuoteTime, buildQuotePrefix, parseQuotedMessage } from "@/lib/quote";
+import GeneratePromptButton from "@/app/components/GeneratePromptButton";
 import FeatureTour from "@/app/components/FeatureTour";
 import TourReplayButton from "@/app/components/TourReplayButton";
 import { ROOM_TOUR_STEPS, TOUR_KEYS } from "@/lib/tour-steps";
@@ -1980,6 +1981,10 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
               <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 400 }}>
                 {roomPromptDraft.length.toLocaleString()} / {MAX_SYSTEM_PROMPT_CHARS.toLocaleString()} characters
               </span>
+              <GeneratePromptButton
+                value={roomPromptDraft}
+                onAccept={setRoomPromptDraft}
+              />
             </label>
             <div style={{ display: "grid", gap: 4 }}>
               <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
