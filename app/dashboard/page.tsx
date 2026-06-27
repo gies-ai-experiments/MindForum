@@ -12,6 +12,7 @@ import PendingInvitations from "./PendingInvitations";
 import ApiKeysPanel from "./ApiKeysPanel";
 import FeatureTour from "@/app/components/FeatureTour";
 import TourReplayButton from "@/app/components/TourReplayButton";
+import RoomLifecycleActions from "@/app/components/RoomLifecycleActions";
 import { DASHBOARD_TOUR_STEPS, TOUR_KEYS } from "@/lib/tour-steps";
 
 export const dynamic = "force-dynamic";
@@ -373,6 +374,15 @@ export default async function DashboardPage({
                                 </a>
                               )}
                               <a className="dash-open" href={url} target="_blank" rel="noreferrer">Open ↗</a>
+                              {r.relationship !== "invited" && (
+                                <div style={{ marginTop: 6 }}>
+                                  <RoomLifecycleActions
+                                    roomId={r.id}
+                                    archived={isArchived}
+                                    canDelete={r.relationship === "owner"}
+                                  />
+                                </div>
+                              )}
                             </td>
                           </tr>
                         );
