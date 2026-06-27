@@ -1005,6 +1005,7 @@ export function snapshot(
   openPolls: OpenPollView[] = [],
   recentClosedPolls: ClosedPollView[] = [],
   coAdminEmailsList: string[] = [],
+  onlineIds: Set<string> = new Set(),
 ) {
   return {
     id: room.id,
@@ -1013,7 +1014,7 @@ export function snapshot(
     webSearchEnabled: room.webSearchEnabled,
     archived: room.archivedAt !== null,
     coAdminEmails: coAdminEmailsList,
-    participants: room.participants,
+    participants: room.participants.map((p) => ({ ...p, online: onlineIds.has(p.id) })),
     messages: reactionsByMsg
       ? room.messages.map((m) => ({ ...m, reactions: reactionsByMsg.get(m.id) ?? [] }))
       : room.messages,
