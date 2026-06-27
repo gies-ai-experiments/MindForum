@@ -4,7 +4,7 @@ import { adminListRoomsWithActivity } from "@/lib/store";
 import { resolveSort, type SortKey } from "@/lib/admin-sort";
 import TokenForm from "./TokenForm";
 import CopyLinkButton from "./CopyLinkButton";
-import RoomActions from "./RoomActions";
+import RoomActions from "@/app/components/RoomLifecycleActions";
 
 export const dynamic = "force-dynamic";
 

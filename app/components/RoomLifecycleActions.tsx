@@ -3,23 +3,27 @@
 import { useState, type CSSProperties } from "react";
 
 /**
- * Super-admin per-row room lifecycle controls for /admin/rooms.
+ * Per-row room lifecycle controls, shared by /admin/rooms (super-admin, every
+ * room) and the creator dashboard "Your rooms" list (owner/co-admin, own rooms).
  *
  * Active room   → Archive button.
- * Archived room → Restore button + Delete button. Delete swaps the cell to an
- *                 inline type-to-confirm state: the exact room id must be typed
- *                 before the destructive request fires.
+ * Archived room → Restore button, plus a Delete button when `canDelete` (owner
+ *                 or super-admin). Delete swaps the cell to an inline
+ *                 type-to-confirm state: the exact room id must be typed before
+ *                 the destructive request fires.
  *
- * All three actions hit existing API routes; the ADMIN_TOKEN cookie resolves
- * to cr_super_admin via getActor(), so no extra auth is needed. On success the
- * page is reloaded so the server-rendered table reflects the new status.
+ * All actions hit existing API routes; the caller's cookie (ADMIN_TOKEN →
+ * cr_super_admin, or the creator session) resolves auth server-side. On success
+ * the page reloads so the server-rendered table reflects the new status.
  */
-export default function RoomActions({
+export default function RoomLifecycleActions({
   roomId,
   archived,
+  canDelete = true,
 }: {
   roomId: string;
   archived: boolean;
+  canDelete?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -124,14 +128,16 @@ export default function RoomActions({
           <button type="button" onClick={restore} disabled={busy} style={btn}>
             {busy ? "…" : "Restore"}
           </button>
-          <button
-            type="button"
-            onClick={() => setConfirming(true)}
-            disabled={busy}
-            style={danger}
-          >
-            Delete
-          </button>
+          {canDelete && (
+            <button
+              type="button"
+              onClick={() => setConfirming(true)}
+              disabled={busy}
+              style={danger}
+            >
+              Delete
+            </button>
+          )}
         </>
       ) : (
         <button type="button" onClick={archive} disabled={busy} style={danger}>
