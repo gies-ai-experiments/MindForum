@@ -10,6 +10,7 @@ import {
   snapshot,
 } from "@/lib/store";
 import { broadcast, subscribe, unsubscribe } from "@/lib/sse";
+import { markOnline, markOffline, onlineParticipantIds } from "@/lib/presence";
 import { assertActiveOrOwnerOnArchive, HttpError } from "@/lib/creator-auth";
 
 export const dynamic = "force-dynamic";
@@ -49,6 +50,11 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   ]);
   if (!room) return new Response("Not found", { status: 404 });
 
+  // Register presence BEFORE building the snapshot so the connecting client
+  // sees itself as online. `onlineTransition` is true only on the 0→1 edge,
+  // i.e. this participant had no other tab open.
+  const onlineTransition = participantId ? markOnline(id, participantId) : false;
+
   const stream = new TransformStream<Uint8Array, Uint8Array>();
   const writer = stream.writable.getWriter();
   const encoder = new TextEncoder();
@@ -56,27 +62,44 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   writer.write(
     encoder.encode(
       `event: snapshot\ndata: ${JSON.stringify(
-        snapshot(room, reactions, openPolls, recentClosedPolls, coAdmins),
+        snapshot(room, reactions, openPolls, recentClosedPolls, coAdmins, onlineParticipantIds(id)),
       )}\n\n`,
     ),
   );
 
   subscribe(id, writer);
 
-  const hb = setInterval(() => {
-    writer.write(encoder.encode(`: hb\n\n`)).catch(() => clearInterval(hb));
-  }, 15000);
+  // Tell the other subscribers this participant just came online.
+  if (onlineTransition && participantId) {
+    broadcast(id, "presence", { participantId, online: true });
+  }
 
+  // Single idempotent teardown. Reached from both the request-abort signal
+  // (clean tab close) and a failed heartbeat write (silently-dropped socket —
+  // laptop lid, network loss — where `abort` never fires). Routing the
+  // heartbeat failure here means a dead connection flips to yellow within ~15s
+  // instead of lingering green.
+  let hb: ReturnType<typeof setInterval> | undefined;
+  let closed = false;
   const onClose = () => {
-    clearInterval(hb);
-    if (participantId) {
-      setParticipantLastSeen(id, participantId, Date.now()).catch((err) => {
-        console.error("setParticipantLastSeen failed:", err);
-      });
-    }
+    if (closed) return;
+    closed = true;
+    if (hb) clearInterval(hb);
     unsubscribe(id, writer);
     writer.close().catch(() => {});
+    if (participantId && markOffline(id, participantId)) {
+      const at = Date.now();
+      setParticipantLastSeen(id, participantId, at).catch((err) => {
+        console.error("setParticipantLastSeen failed:", err);
+      });
+      broadcast(id, "presence", { participantId, online: false, lastSeenAt: at });
+    }
   };
+
+  hb = setInterval(() => {
+    writer.write(encoder.encode(`: hb\n\n`)).catch(() => onClose());
+  }, 15000);
+
   req.signal?.addEventListener("abort", onClose);
 
   return new Response(stream.readable, {
