@@ -20,7 +20,7 @@ export const ROOM_TOUR_STEPS: TourStep[] = [
   {
     selector: '[data-tour="attach"]',
     title: "Give the AI context",
-    body: "Share PDFs, Word docs, or links. The AI reads the ones you select before it answers.",
+    body: "Share PDFs, Word docs, or links — or scrape a URL, pull in a GitHub repo, or <strong>paste raw text</strong>. The AI reads the sources you select before it answers.",
     side: "bottom",
   },
   {
@@ -38,6 +38,13 @@ export const ROOM_TOUR_STEPS: TourStep[] = [
     id: "summarize",
   },
   {
+    selector: '[data-tour="thread"]',
+    title: "Edit or delete your messages",
+    body: "Hover any message <strong>you</strong> sent to edit or delete it. A deleted message leaves a small placeholder so the rest of the thread still reads in order.",
+    side: "left",
+    align: "start",
+  },
+  {
     selector: '[data-tour="brief"]',
     title: "Wrap it into a brief",
     body: "When you're done, turn the whole thread into themes, risks, and next steps — downloadable as Markdown.",
@@ -46,8 +53,15 @@ export const ROOM_TOUR_STEPS: TourStep[] = [
   {
     selector: '[data-tour="participants"]',
     title: "See who's here",
-    body: "Check who's in the room, and @-mention a colleague to flag something for them.",
+    body: "Check who's in the room — a <strong>green dot</strong> marks who's online right now — and @-mention a colleague to flag something for them.",
     side: "left",
+  },
+  {
+    selector: '[data-tour="room-settings"]',
+    title: "Set up the room",
+    body: "Managers: open <strong>⚙ Settings</strong> to rename the room, edit the AI's instructions (or auto-generate them), and switch on <strong>web search</strong> so the AI can cite live sources when someone asks.",
+    side: "bottom",
+    align: "end",
   },
 ];
 
@@ -67,7 +81,7 @@ export const DASHBOARD_TOUR_STEPS: TourStep[] = [
   {
     selector: '[data-tour="rooms"]',
     title: "Manage your rooms",
-    body: "Open any room, jump to its settings, or archive it when it's done.",
+    body: "Open any room or jump to its settings. Use the tabs to filter Active vs. Archived, and the per-row actions to <strong>archive, restore, or permanently delete</strong> a room.",
     side: "top",
   },
   {
@@ -76,11 +90,20 @@ export const DASHBOARD_TOUR_STEPS: TourStep[] = [
     body: "Your most active rooms over the last 7 days.",
     side: "left",
   },
+  {
+    selector: '[data-tour="api-keys"]',
+    title: "Build on the API",
+    body: "Mint a personal <strong>API key</strong> to create rooms and send invitations programmatically. Keys are shown once — copy it then, and revoke it anytime.",
+    side: "top",
+  },
 ];
 
+// Bumped v1 → v2 (2026-06-27) when the tour gained steps for the API keys
+// panel, message edit/delete, participant presence, and room web search — so
+// users who already dismissed v1 re-see the refreshed walkthrough once.
 export const TOUR_KEYS = {
-  room: "mindforum_tour_room_v1",
-  dashboard: "mindforum_tour_dash_v1",
+  room: "mindforum_tour_room_v2",
+  dashboard: "mindforum_tour_dash_v2",
 } as const;
 
 // ---- Pure, DOM-independent helpers (deps injected → unit-testable) ----

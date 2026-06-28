@@ -1598,6 +1598,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
           {canManage && (
             <button
               type="button"
+              data-tour="room-settings"
               onClick={() => {
                 setRoomNameDraft(state.name);
                 setRoomPromptDraft(state.systemPrompt ?? "");
@@ -1665,7 +1666,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
         <section
           style={{ ...col(), minHeight: 0, display: "grid", gridTemplateRows: "1fr auto" }}
         >
-          <div style={{ overflowY: "auto", paddingRight: 8 }}>
+          <div data-tour="thread" style={{ overflowY: "auto", paddingRight: 8 }}>
             {state.systemPrompt && <GuidanceCard text={state.systemPrompt} />}
             {state.messages.length === 0 && (
               <p style={{ color: "var(--muted)" }}>

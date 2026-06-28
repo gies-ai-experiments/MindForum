@@ -433,7 +433,7 @@ export default async function DashboardPage({
           </section>
 
           {/* ---- API keys ---- */}
-          <section className="dash-panel" id="api-keys">
+          <section className="dash-panel" id="api-keys" data-tour="api-keys">
             <div className="dash-panel__body">
               <ApiKeysPanel />
             </div>
