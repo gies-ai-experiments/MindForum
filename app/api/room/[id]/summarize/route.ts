@@ -36,7 +36,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
   // Shadow-mute parity: muted participants get a fake success and post nothing.
   if (participant.mutedAt != null) {
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, summary: "" });
   }
 
   const body = await req.json().catch(() => ({}));
@@ -69,6 +69,10 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     parsed.value.source === "text"
       ? `> _Summary of pasted text · requested by ${participant.name}_`
       : `> _Summary · requested by ${participant.name}_`;
+
+  if (!parsed.value.post) {
+    return NextResponse.json({ ok: true, summary });
+  }
 
   const msg: Message = {
     id: nanoid(10),

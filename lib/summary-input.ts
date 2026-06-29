@@ -1,7 +1,9 @@
 // Pure request validation + filename helper for the /summarize command.
 export const MAX_SUMMARY_TEXT_CHARS = 20000;
 
-export type SummaryRequest = { source: "room" } | { source: "text"; text: string };
+export type SummaryRequest =
+  | { source: "room"; post: boolean }
+  | { source: "text"; text: string; post: boolean };
 
 export function validateSummaryRequest(
   body: unknown,
@@ -9,12 +11,13 @@ export function validateSummaryRequest(
   | { ok: true; value: SummaryRequest }
   | { ok: false; error: "bad_source" | "text_required" | "text_too_long" } {
   const b = (body ?? {}) as Record<string, unknown>;
-  if (b.source === "room") return { ok: true, value: { source: "room" } };
+  const post = b.post === false ? false : true;
+  if (b.source === "room") return { ok: true, value: { source: "room", post } };
   if (b.source === "text") {
     const text = typeof b.text === "string" ? b.text.trim() : "";
     if (!text) return { ok: false, error: "text_required" };
     if (text.length > MAX_SUMMARY_TEXT_CHARS) return { ok: false, error: "text_too_long" };
-    return { ok: true, value: { source: "text", text } };
+    return { ok: true, value: { source: "text", text, post } };
   }
   return { ok: false, error: "bad_source" };
 }

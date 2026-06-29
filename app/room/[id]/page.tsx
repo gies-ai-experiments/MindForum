@@ -1375,7 +1375,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
         />
       )}
       {showSummarizeModal && (
-        <SummarizeModal roomId={id} onClose={() => setShowSummarizeModal(false)} />
+        <SummarizeModal roomId={id} roomName={state.name} onClose={() => setShowSummarizeModal(false)} />
       )}
       {catchupOpen && (
         <div
