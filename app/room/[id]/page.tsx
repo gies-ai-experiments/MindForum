@@ -27,7 +27,9 @@ import { formatQuoteTime, buildQuotePrefix, parseQuotedMessage } from "@/lib/quo
 import GeneratePromptButton from "@/app/components/GeneratePromptButton";
 import FeatureTour from "@/app/components/FeatureTour";
 import TourReplayButton from "@/app/components/TourReplayButton";
+import WhatsNew from "@/app/components/WhatsNew";
 import { ROOM_TOUR_STEPS, TOUR_KEYS } from "@/lib/tour-steps";
+import { matchSlashCommands, type SlashCommand } from "@/lib/slash-commands";
 
 type Participant = {
   id: string;
@@ -129,6 +131,11 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
   const [joining, setJoining] = useState(false);
   const [state, setState] = useState<Snapshot | null>(null);
   const [draft, setDraft] = useState("");
+  // Slash-command popup: which row is highlighted, and a "dismissed" flag so
+  // Escape can hide the menu without altering the draft (reset on next keystroke).
+  const [slashSel, setSlashSel] = useState(0);
+  const [slashDismissed, setSlashDismissed] = useState(false);
+  const composerTaRef = useRef<HTMLTextAreaElement | null>(null);
   const [busy, setBusy] = useState(false);
   const [briefPending, setBriefPending] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
@@ -1349,12 +1356,14 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
         startWhen={joined && !catchupOpen}
         hooks={{
           poll: {
-            // Show "/poll" in the composer (triggers the live /poll highlight) while
-            // the popover explains it; restore whatever was there when the step leaves.
+            // Show "/poll " in the composer (triggers the live /poll highlight)
+            // while the popover explains it; restore whatever was there when the
+            // step leaves. The trailing space keeps the slash-command popup
+            // closed so it doesn't overlap the tour tooltip.
             onShow: () =>
               setDraft((d) => {
                 tourSavedDraftRef.current = d;
-                return "/poll";
+                return "/poll ";
               }),
             onHide: () => setDraft(() => tourSavedDraftRef.current),
           },
@@ -1617,6 +1626,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
               Invite
             </button>
           )}
+          <WhatsNew surface="room" className="whatsnew-btn" />
           <TourReplayButton surface="room" className="room-tour-btn" />
           {settingsOpen && (
             <NotifySettingsPopover
@@ -1735,6 +1745,20 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
             const pollCommand = /^\/poll(\s|$)/.test(draft);
             const summarizeCommand = /^\/summarize(\s|$)/.test(draft);
             const pills = detectMentionPills(draft, state.participants, participantId);
+            // Slash-command popup: open only when the draft is a bare leading
+            // "/token" (see matchSlashCommands) and not dismissed. Picking a
+            // command inserts it (+ trailing space) so the existing /poll //
+            // /summarize glow fires, then the user presses Enter to run it.
+            const slashMatches = slashDismissed ? [] : matchSlashCommands(draft);
+            const slashSelIdx = slashMatches.length
+              ? Math.min(Math.max(slashSel, 0), slashMatches.length - 1)
+              : 0;
+            const pickSlash = (c: SlashCommand) => {
+              setDraft(c.cmd + " ");
+              setSlashSel(0);
+              setSlashDismissed(false);
+              requestAnimationFrame(() => composerTaRef.current?.focus());
+            };
             return (
               <form
                 onSubmit={send}
@@ -1809,6 +1833,79 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
                 )}
                 <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
                   <div style={{ flex: 1, position: "relative", minWidth: 0 }}>
+                    {slashMatches.length > 0 && (
+                      <div
+                        role="listbox"
+                        aria-label="Slash commands"
+                        style={{
+                          position: "absolute",
+                          bottom: "calc(100% + 6px)",
+                          left: 0,
+                          right: 0,
+                          background: "var(--card)",
+                          border: "1px solid var(--border)",
+                          borderRadius: 10,
+                          boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
+                          overflow: "hidden",
+                          zIndex: 20,
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: 11,
+                            letterSpacing: "0.04em",
+                            textTransform: "uppercase",
+                            color: "var(--muted)",
+                            padding: "8px 12px 4px",
+                          }}
+                        >
+                          Commands
+                        </div>
+                        {slashMatches.map((c, i) => (
+                          <div
+                            key={c.cmd}
+                            role="option"
+                            aria-selected={i === slashSelIdx}
+                            // mousedown (not click) so focus stays in the textarea
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              pickSlash(c);
+                            }}
+                            onMouseEnter={() => setSlashSel(i)}
+                            style={{
+                              display: "flex",
+                              alignItems: "baseline",
+                              gap: 10,
+                              padding: "8px 12px",
+                              cursor: "pointer",
+                              background:
+                                i === slashSelIdx ? "rgba(19,41,75,0.08)" : "transparent",
+                            }}
+                          >
+                            <span
+                              style={{
+                                fontFamily:
+                                  "ui-monospace, SFMono-Regular, Menlo, monospace",
+                                fontSize: 14,
+                                fontWeight: 700,
+                                color: "var(--navy)",
+                                minWidth: 96,
+                              }}
+                            >
+                              {c.cmd}
+                            </span>
+                            <span
+                              style={{
+                                fontSize: 13,
+                                color: i === slashSelIdx ? "var(--text)" : "var(--muted)",
+                              }}
+                            >
+                              {c.desc}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     <div
                       aria-hidden="true"
                       style={{
@@ -1829,10 +1926,42 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
                       {renderInputMentions(draft)}
                     </div>
                     <TextareaAutosize
+                      ref={composerTaRef}
                       data-tour="composer"
                       value={draft}
-                      onChange={(e) => setDraft(e.target.value)}
+                      onChange={(e) => {
+                        setDraft(e.target.value);
+                        setSlashDismissed(false);
+                      }}
                       onKeyDown={(e) => {
+                        // When the slash-command popup is open, the arrow keys,
+                        // Enter/Tab and Escape drive the menu instead of the
+                        // composer; fall through to send only when it's closed.
+                        if (slashMatches.length > 0) {
+                          if (e.key === "ArrowDown") {
+                            e.preventDefault();
+                            setSlashSel((slashSelIdx + 1) % slashMatches.length);
+                            return;
+                          }
+                          if (e.key === "ArrowUp") {
+                            e.preventDefault();
+                            setSlashSel(
+                              (slashSelIdx - 1 + slashMatches.length) %
+                                slashMatches.length,
+                            );
+                            return;
+                          }
+                          if (e.key === "Enter" || e.key === "Tab") {
+                            e.preventDefault();
+                            pickSlash(slashMatches[slashSelIdx]);
+                            return;
+                          }
+                          if (e.key === "Escape") {
+                            e.preventDefault();
+                            setSlashDismissed(true);
+                            return;
+                          }
+                        }
                         if (
                           e.key === "Enter" &&
                           !e.shiftKey &&

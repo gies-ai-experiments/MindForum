@@ -12,6 +12,7 @@ import PendingInvitations from "./PendingInvitations";
 import ApiKeysPanel from "./ApiKeysPanel";
 import FeatureTour from "@/app/components/FeatureTour";
 import TourReplayButton from "@/app/components/TourReplayButton";
+import WhatsNew from "@/app/components/WhatsNew";
 import RoomLifecycleActions from "@/app/components/RoomLifecycleActions";
 import MindForumLogo from "@/app/components/MindForumLogo";
 import { DASHBOARD_TOUR_STEPS, TOUR_KEYS } from "@/lib/tour-steps";
@@ -235,6 +236,7 @@ export default async function DashboardPage({
           </div>
           <div className="dash-topbar__right">
             <span className="dash-topbar__hello">Welcome back, {creator.displayName.split(/\s+/)[0]}</span>
+            <WhatsNew surface="dashboard" className="whatsnew-btn" />
             <TourReplayButton surface="dashboard" className="dash-tour-btn" />
             <span className="dash-topbar__avatar">{initials(creator.displayName)}</span>
           </div>

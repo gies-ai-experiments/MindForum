@@ -1493,6 +1493,28 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: 
 .dash-tour-btn { border-color: #E3E7ED; }
 .room-tour-btn:hover, .dash-tour-btn:hover { background: #F2F4F8; }
 
+/* "What's new" button (sits beside the tour replay button) */
+.whatsnew-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 30px; padding: 0 12px; border-radius: 999px;
+  border: 1px solid rgba(19, 41, 75, 0.18);
+  background: #fff; color: var(--navy);
+  font-weight: 600; font-size: 13px; cursor: pointer;
+  flex-shrink: 0; position: relative;
+}
+.whatsnew-btn:hover { background: #F2F4F8; }
+.whatsnew-btn__badge {
+  position: absolute; top: -6px; right: -6px;
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+  background: var(--orange); color: #fff;
+  font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;
+}
+/* On very narrow room headers, drop the label and keep the ✦ + badge. */
+@media (max-width: 560px) {
+  .whatsnew-btn__label { display: none; }
+  .whatsnew-btn { padding: 0 10px; }
+}
+
 /* ===================== Creator sign-in (split screen) ===================== */
 .signin {
   min-height: 100vh;
