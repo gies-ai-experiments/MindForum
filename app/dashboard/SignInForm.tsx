@@ -1,6 +1,7 @@
 import { signInAzure } from "@/lib/nextauth-actions";
 import { isAzureConfigured } from "@/lib/auth-config";
 import SignInStage from "./SignInStage";
+import MindForumLogo from "@/app/components/MindForumLogo";
 
 export default function SignInForm({
   error,
@@ -27,8 +28,7 @@ export default function SignInForm({
       <section className="signin-auth">
         <div className="signin-auth__inner">
           <div className="signin-brand">
-            <span className="signin-brand__mark">M</span>
-            <span className="signin-brand__word">MindForum</span>
+            <MindForumLogo />
           </div>
           <p className="signin-tagline">
             Sign in to your brainstorming rooms.

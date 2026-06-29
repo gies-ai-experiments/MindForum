@@ -22,6 +22,25 @@ button:disabled { cursor: not-allowed; opacity: 0.6; }
 input, textarea { font-family: inherit; }
 code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: rgba(19,41,75,0.06); padding: 1px 4px; border-radius: 4px; }
 
+.brand-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: currentColor;
+}
+.brand-logo__mark {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  filter: drop-shadow(0 8px 18px rgba(232, 74, 39, 0.22));
+}
+.brand-logo__word {
+  font-family: Montserrat, system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: currentColor;
+}
+
 /* ----- Landing (Supabase-style layout, MindForum colors) ----- */
 
 .landing {
@@ -47,11 +66,10 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: 
   animation: landing-fade 0.7s ease backwards;
 }
 .landing-wordmark {
-  font-family: Montserrat, system-ui, sans-serif;
-  font-weight: 700;
   font-size: 20px;
   color: white;
 }
+.landing-wordmark .brand-logo__mark { width: 34px; height: 34px; }
 .landing-nav__links {
   display: flex;
   gap: 28px;
@@ -648,7 +666,8 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: 
 .landing-show__windowbody .landing-feat-file { font-size: 11px; padding: 12px 8px; }
 
 .landing-light {
-  background: var(--bg);
+  background:
+    linear-gradient(180deg, var(--bg) 0%, var(--bg) 56%, #DDE6F0 72%, #1C3D69 88%, var(--navy) 100%);
 }
 
 .landing-how {
@@ -812,11 +831,11 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: 
   max-width: 1200px;
   margin: 0 auto;
   padding: 24px 24px 48px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid rgba(255, 255, 255, 0.16);
   font-size: 13px;
-  color: var(--muted);
+  color: rgba(255, 255, 255, 0.68);
 }
-.landing-footer a { color: var(--navy); }
+.landing-footer a { color: white; }
 
 @media (max-width: 960px) {
   .landing-nav__links { display: none; }
@@ -1139,6 +1158,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: 
   color: white;
   padding: 4px 8px 22px;
 }
+.dash-brand .brand-logo__mark { width: 30px; height: 30px; }
 .dash-brand__mark {
   width: 26px;
   height: 26px;
@@ -1501,6 +1521,15 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: 
 }
 
 .signin-brand { display: flex; align-items: center; gap: 12px; }
+.signin-brand .brand-logo {
+  color: #14305C;
+  font-size: 27px;
+}
+.signin-brand .brand-logo__mark {
+  width: 44px;
+  height: 44px;
+  filter: drop-shadow(0 8px 20px rgba(232, 74, 39, 0.3));
+}
 .signin-brand__mark {
   width: 40px;
   height: 40px;

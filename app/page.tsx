@@ -1,7 +1,7 @@
 import Link from "next/link";
-import JoinRoomForm from "./JoinRoomForm";
 import AdminCreateCard from "./AdminCreateCard";
 import FeatureShowcase from "./FeatureShowcase";
+import MindForumLogo from "./components/MindForumLogo";
 
 export const metadata = {
   title: "MindForum — brainstorm together, with an AI that waits its turn",
@@ -49,11 +49,10 @@ export default function LandingPage() {
   return (
     <main className="landing">
       <header className="landing-nav">
-        <span className="landing-wordmark">MindForum</span>
+        <MindForumLogo className="landing-wordmark" />
         <nav className="landing-nav__links">
           <a href="#features">Features</a>
           <a href="#how-it-works">How it works</a>
-          <a href="#join">Join</a>
         </nav>
         <div className="landing-nav__actions">
           <Link href="/dashboard" className="landing-btn landing-btn--orange">
@@ -83,9 +82,6 @@ export default function LandingPage() {
           <Link href="/dashboard" className="landing-btn landing-btn--orange landing-btn--lg">
             Sign in to create rooms
           </Link>
-          <a href="#join" className="landing-btn landing-btn--ghost-dark landing-btn--lg">
-            Have a room link? Join →
-          </a>
         </div>
 
         <div className="landing-trusted">
@@ -149,9 +145,6 @@ export default function LandingPage() {
             <span className="landing-step__label">STEP 02</span>
             <h3>Share the link</h3>
             <p>Colleagues join in one click with just their name — no accounts.</p>
-            <a href="#join" className="landing-btn landing-btn--navy landing-btn--pill">
-              Join a room
-            </a>
           </article>
           <article className="landing-step-card">
             <svg className="landing-step__icon" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -165,16 +158,6 @@ export default function LandingPage() {
               See the features
             </a>
           </article>
-        </div>
-      </section>
-
-      <section id="join" className="landing-section landing-join">
-        <div className="landing-join-card">
-          <h2>Join a room</h2>
-          <p>
-            Invited by a colleague? Their link takes you straight in — or paste the room ID here.
-          </p>
-          <JoinRoomForm />
         </div>
       </section>
 
