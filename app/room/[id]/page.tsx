@@ -150,6 +150,9 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
   const [catchupLoading, setCatchupLoading] = useState(false);
   const [showPollModal, setShowPollModal] = useState(false);
   const [showSummarizeModal, setShowSummarizeModal] = useState(false);
+  // When the Summarize modal is opened via the manager Settings "Export context"
+  // entry, it also offers exporting into a brand-new room (creators only).
+  const [summarizeCanCreate, setSummarizeCanCreate] = useState(false);
 
   const [participantId, setParticipantId] = useState<string>("");
   const [prefs, setPrefs] = useState<NotifyPrefs>(DEFAULT_PREFS);
@@ -805,6 +808,7 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
     if (body === "/summarize" || body.startsWith("/summarize ")) {
       setDraft("");
       setQuoted(null);
+      setSummarizeCanCreate(false);
       setShowSummarizeModal(true);
       return;
     }
@@ -1384,7 +1388,15 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
         />
       )}
       {showSummarizeModal && (
-        <SummarizeModal roomId={id} roomName={state.name} onClose={() => setShowSummarizeModal(false)} />
+        <SummarizeModal
+          roomId={id}
+          roomName={state.name}
+          canCreateRoom={summarizeCanCreate}
+          onClose={() => {
+            setShowSummarizeModal(false);
+            setSummarizeCanCreate(false);
+          }}
+        />
       )}
       {catchupOpen && (
         <div
@@ -2228,6 +2240,24 @@ export default function RoomPage(props: { params: Promise<{ id: string }> }) {
               </button>
             </div>
           </form>
+
+          <div style={{ marginTop: 18, borderTop: "1px solid var(--border)", paddingTop: 14 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Export context</div>
+            <p style={{ margin: "0 0 8px", fontSize: 12, color: "var(--muted)" }}>
+              Summarize this conversation and send it to another room — or start a new room with it as context.
+            </p>
+            <button
+              type="button"
+              style={btnSecondary()}
+              onClick={() => {
+                setRoomSettingsOpen(false);
+                setSummarizeCanCreate(true);
+                setShowSummarizeModal(true);
+              }}
+            >
+              Export context →
+            </button>
+          </div>
 
           <div style={{ marginTop: 18, borderTop: "1px solid var(--border)", paddingTop: 14 }}>
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
