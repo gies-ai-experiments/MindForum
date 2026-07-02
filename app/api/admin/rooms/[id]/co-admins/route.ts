@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
 import {
   requireRoomOwner,
   provisionCreator,
@@ -14,6 +15,18 @@ import {
 } from "@/lib/store";
 import { broadcast } from "@/lib/sse";
 import { logAudit } from "@/lib/audit";
+import { sendCoAdminGrantEmail } from "@/lib/email";
+
+function baseUrlFrom(req: NextRequest): string {
+  return (
+    process.env.NEXTAUTH_URL ??
+    `${req.headers.get("x-forwarded-proto") ?? "https"}://${
+      req.headers.get("x-forwarded-host") ??
+      req.headers.get("host") ??
+      "localhost:3000"
+    }`
+  ).replace(/\/$/, "");
+}
 
 export const runtime = "nodejs";
 
@@ -75,6 +88,22 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       metadata: { creatorId: creator.id, email: creator.email, name: creator.displayName },
     });
     broadcast(id, "co_admin_changed", { coAdminEmails: await coAdminEmails(id) });
+
+    // Best-effort notification email — never block the grant on email delivery.
+    const baseUrl = baseUrlFrom(req);
+    const emailResult = await sendCoAdminGrantEmail({
+      coAdminEmail: creator.email,
+      coAdminName: creator.displayName,
+      roomName: room.name,
+      granterName: actor.displayName,
+      roomUrl: `${baseUrl}/room/${id}`,
+    });
+    if (!emailResult.ok && emailResult.error !== "not_configured") {
+      const msg = `[co-admins] grant email send failed for ${creator.id}: ${emailResult.error}`;
+      console.error(msg);
+      Sentry.captureMessage(msg, "warning");
+    }
+
     return NextResponse.json({
       ok: true,
       creator: { id: creator.id, email: creator.email, displayName: creator.displayName },

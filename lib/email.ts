@@ -92,6 +92,81 @@ Sign in with this email address (${inviteeEmail}) using your Illinois login and 
   return { subject, html, plainText };
 }
 
+export type CoAdminGrantEmailParams = {
+  coAdminName: string;
+  coAdminEmail: string;
+  roomName: string;
+  granterName: string;
+  roomUrl: string;
+};
+
+export function buildCoAdminGrantEmail(params: CoAdminGrantEmailParams): BuiltEmail {
+  const { coAdminName, coAdminEmail, roomName, granterName, roomUrl } = params;
+
+  const subject = `You're now a manager of ${roomName} on MindForum`;
+
+  const coAdmin = escapeHtml(coAdminName);
+  const email = escapeHtml(coAdminEmail);
+  const room = escapeHtml(roomName);
+  const granter = escapeHtml(granterName);
+  const url = escapeHtml(roomUrl);
+
+  // Table-based, inline-styled layout mirroring buildInvitationEmail for broad
+  // email-client compatibility. Brand palette: orange #E84A27, navy #13294B.
+  const html = `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+  </head>
+  <body style="margin:0;padding:0;background:#F5F5F5;font-family:'Source Sans 3',-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#111827">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F5F5;padding:24px 12px">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#FFFFFF;border:1px solid #E5E7EB;border-radius:12px;overflow:hidden">
+            <tr>
+              <td style="background:#E84A27;background:linear-gradient(90deg,#E84A27,#ff7a3d);padding:20px 28px">
+                <span style="font-family:Montserrat,Segoe UI,Arial,sans-serif;font-weight:700;font-size:20px;color:#FFFFFF;letter-spacing:.2px">MindForum</span>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:28px">
+                <h1 style="margin:0 0 14px;font-family:Montserrat,Segoe UI,Arial,sans-serif;font-size:20px;line-height:1.3;color:#13294B">You're now a manager of ${room}</h1>
+                <p style="margin:0 0 14px;font-size:16px;line-height:1.55">Hi ${coAdmin},</p>
+                <p style="margin:0 0 24px;font-size:16px;line-height:1.55"><strong style="color:#13294B">${granter}</strong> made you a manager (co-admin) of the room <strong style="color:#13294B">${room}</strong> on MindForum. As a manager you can rename the room, edit its AI system prompt, and manage its shared files.</p>
+                <table role="presentation" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td style="border-radius:8px;background:#E84A27">
+                      <a href="${url}" style="display:inline-block;padding:13px 26px;font-family:'Source Sans 3',Segoe UI,Arial,sans-serif;font-size:16px;font-weight:600;color:#FFFFFF;text-decoration:none;border-radius:8px">Open ${room} &rarr;</a>
+                    </td>
+                  </tr>
+                </table>
+                <p style="margin:24px 0 0;font-size:14px;line-height:1.55;color:#6B7280">Sign in with this email address (<strong style="color:#111827">${email}</strong>) using your Illinois login to use your manager tools.</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:18px 28px;border-top:1px solid #E5E7EB;background:#FAFAFA">
+                <p style="margin:0;font-size:12px;line-height:1.5;color:#6B7280">You received this because ${granter} added you as a manager of a MindForum room. If you weren't expecting it, you can safely ignore this email.</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+
+  const plainText = `Hi ${coAdminName},
+
+${granterName} made you a manager (co-admin) of the room "${roomName}" on MindForum. As a manager you can rename the room, edit its AI system prompt, and manage its shared files.
+
+Open the room: ${roomUrl}
+
+Sign in with this email address (${coAdminEmail}) using your Illinois login to use your manager tools.`;
+
+  return { subject, html, plainText };
+}
+
 export type MentionReminderEmailParams = {
   authorName: string;
   authorEmail: string;
@@ -202,6 +277,33 @@ export async function sendInvitationEmail(
       ok: false,
       error: err instanceof Error ? err.message : "send_failed",
     };
+  }
+}
+
+export async function sendCoAdminGrantEmail(
+  params: CoAdminGrantEmailParams
+): Promise<{ ok: boolean; id?: string; error?: string }> {
+  const senderAddress = process.env.ACS_SENDER_ADDRESS;
+  const client = getClient();
+
+  if (!client || !senderAddress) {
+    console.debug("[email] ACS not configured; skipping co-admin grant email");
+    return { ok: false, error: "not_configured" };
+  }
+
+  try {
+    const { subject, html, plainText } = buildCoAdminGrantEmail(params);
+    await client.beginSend({
+      senderAddress,
+      content: { subject, html, plainText },
+      recipients: {
+        to: [{ address: params.coAdminEmail, displayName: params.coAdminName }],
+      },
+    });
+    return { ok: true };
+  } catch (err) {
+    console.error("[email] failed to send co-admin grant email", err);
+    return { ok: false, error: err instanceof Error ? err.message : "send_failed" };
   }
 }
 
